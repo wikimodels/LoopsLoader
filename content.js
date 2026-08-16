@@ -309,11 +309,9 @@
   async function pickLoopAndContinue() {
     phase = 'upload';
     notify();
-    const upBase = resCount('/upload-finish/');
-    log('waiting for upload to finish (server upload-finish OR status text -> "Uploaded")');
+    log('waiting for upload: panel status -> "Uploaded" (after Uploading Clip / Initializing)');
     const done = await waitFor(
       () => {
-        if (resCount('/upload-finish/') > upBase) return 'DONE-API';
         const d = uploadPanel();
         if (!d) return 'CLOSED';
         const st = uploadStatusText(d);
@@ -321,12 +319,12 @@
         return null;
       },
       T.FILE_READY,
-      'upload finished',
+      'upload finished (Uploaded)',
       (ts) => {
         const d = uploadPanel();
         const st = d ? uploadStatusText(d) : 'CLOSED';
         const bar = d ? progressPct(d) : null;
-        log('  upload status (' + ts + 'ms): ' + (st || '?') + (bar != null ? ' ' + bar + '%' : '') + ' uploadFinish=' + (resCount('/upload-finish/') - upBase) + ' dialogs=' + JSON.stringify(dialogTexts()));
+        log('  upload status (' + ts + 'ms): ' + (st || '?') + (bar != null ? ' ' + bar + '%' : '') + ' dialogs=' + JSON.stringify(dialogTexts()));
       }
     );
     log('upload finished: ' + done);
