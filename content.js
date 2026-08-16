@@ -546,7 +546,26 @@
 
   function createReady() {
     const b = createBtn();
-    return b && !isDisabled(b) ? b : null;
+    return b && !isDisabled(b) && isVisible(b) ? b : null;
+  }
+
+  function coverSourceBlock() {
+    const pill = document.querySelector('button[aria-label="Change condition type from Cover"]');
+    if (!pill) return null;
+    let cur = pill.parentElement;
+    for (let i = 0; i < 10 && cur; i++) {
+      if (cur.querySelector('[aria-label="Play audio"]')) return cur;
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  function coverSourceReady(stem) {
+    const b = coverSourceBlock();
+    if (!b) return null;
+    if (!textOf(b).includes(stem)) return null;
+    if (!b.querySelector(SEL_PLAY)) return null;
+    return b.querySelector('canvas') ? 'FULL' : 'CARD';
   }
 
   function clipCardNamed(stem) {
@@ -556,6 +575,13 @@
         if (textOf(cur).includes(stem)) return p;
         cur = cur.parentElement;
       }
+    }
+    return null;
+  }
+
+  function panelHasTrack(stem) {
+    for (const d of document.querySelectorAll('[role="dialog"]')) {
+      if (isVisible(d) && textOf(d).includes(stem)) return d;
     }
     return null;
   }
@@ -612,21 +638,22 @@
     );
     await clickEl(cover, 'Cover');
     await sleep(800);
+    log('after Cover click, dialogs=' + JSON.stringify(dialogTexts()) + ' createBtn=' + !!createBtn() + ' disabled=' + isDisabled(createBtn()));
     await clickKeepCurrent(60000);
     phase = 'cover-wait';
     notify();
     const waveBase = waveAggCount();
-    log('--- step: confirm "' + stem + '" in upload panel');
+    log('--- step: confirm "' + stem + '" in Cover condition block');
     const done = await waitFor(
       () => {
-        if (clipCardReady(stem)) return 'CARD';
-        if (clipCardNamed(stem)) return 'NAMED';
+        const cr = coverSourceReady(stem);
+        if (cr) return cr;
         if (waveAggCount() > waveBase) return 'WAVE';
         return null;
       },
       T.LOAD,
-      'cover clip in panel',
-      (ts) => log('  wait card (' + ts + 'ms) cardReady=' + !!clipCardReady(stem) + ' named=' + !!clipCardNamed(stem) + ' wave=' + (waveAggCount() - waveBase) + ' dialogs=' + JSON.stringify(dialogTexts()))
+      'cover clip in Cover condition block',
+      (ts) => log('  wait cover (' + ts + 'ms) block=' + !!coverSourceBlock() + ' ready=' + JSON.stringify(coverSourceReady(stem)) + ' wave=' + (waveAggCount() - waveBase) + ' play=' + document.querySelectorAll(SEL_PLAY).length + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
     await sleep(1000);
     log('cover clip confirmed: ' + stem + ' via=' + done);
@@ -634,9 +661,12 @@
     notify();
     const create = await waitFor(
       createReady,
-      60000,
+      90000,
       'Create button enabled',
-      (ts) => log('  wait Create (' + ts + 'ms) disabled=' + isDisabled(createBtn()))
+      (ts) => {
+        const b = createBtn();
+        log('  wait Create (' + ts + 'ms) found=' + !!b + ' disabledAttr=' + (b ? !!b.hasAttribute('data-trigger-disabled') : '-') + ' ariaDisabled=' + (b ? b.getAttribute('aria-disabled') : '-') + ' disabledProp=' + (b ? b.disabled : '-'));
+      }
     );
     await clickEl(create, 'Create song');
     phase = 'cover-spin';
