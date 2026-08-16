@@ -586,12 +586,36 @@
     return null;
   }
 
+  async function dismissPrivacy() {
+    const d = [...document.querySelectorAll('[role="dialog"]')].find((x) => isVisible(x) && /privacy|preference|cookie/i.test(textOf(x)));
+    if (!d) return false;
+    log('privacy/cookie dialog open, closing it');
+    const btns = [...d.querySelectorAll('button')].map((b) => textOf(b) || b.getAttribute('aria-label')).filter(Boolean);
+    log('privacy dialog buttons: ' + JSON.stringify(btns));
+    const accept = [...d.querySelectorAll('button')].find((b) => /accept|agree|ok|принять|продолжить/i.test(textOf(b) + ' ' + (b.getAttribute('aria-label') || '')));
+    if (accept) {
+      await clickEl(accept, 'Privacy accept');
+      return true;
+    }
+    pressEscape();
+    await sleep(500);
+    log('privacy dialog escaped');
+    return true;
+  }
+
   async function clickKeepCurrent(timeout) {
     phase = 'cover-keep';
     notify();
+    log('waiting Keep Current (up to ' + Math.round(timeout / 1000) + 's)');
     const t0 = Date.now();
+    let lastLog = 0;
     while (Date.now() - t0 < timeout) {
       if (stopped) throw new Error('stopped');
+      const ts = Date.now() - t0;
+      if (ts - lastLog >= 3000) {
+        lastLog = ts;
+        log('  wait Keep Current (' + ts + 'ms) block=' + !!coverSourceBlock() + ' dialogs=' + JSON.stringify(dialogTexts()));
+      }
       const keep = [...document.querySelectorAll('button')].find((b) => isVisible(b) && /keep current/i.test(textOf(b)));
       if (keep) {
         await clickEl(keep, 'Keep Current');
@@ -615,6 +639,7 @@
     log('--- cover: ' + name);
     phase = 'cover-menu';
     notify();
+    await dismissPrivacy();
     pressEscape();
     await sleep(500);
     const moreBtn = row.querySelector('button[aria-label="More options"]');
@@ -627,18 +652,33 @@
       (ts) => log('  wait main menu (' + ts + 'ms) menus=' + JSON.stringify(contextMenus().map((m) => [...m.querySelectorAll('.context-menu-item button')].map((b) => textOf(b) || b.getAttribute('aria-label')).join(','))))
     );
     const remix = contextMenus().map((m) => menuItem(m, 'Remix')).find(Boolean);
-    hoverEl(remix);
     log('hovered Remix, waiting submenu with Cover');
-    await sleep(800);
+    await sleep(500);
     const cover = await waitFor(
-      () => contextMenus().map((m) => menuItem(m, 'Cover')).find(Boolean),
+      () => {
+        for (const m of contextMenus()) {
+          const r = menuItem(m, 'Remix');
+          if (r) hoverEl(r);
+        }
+        return contextMenus().map((m) => menuItem(m, 'Cover')).find(Boolean) || null;
+      },
       10000,
       'Cover item in submenu',
       (ts) => log('  wait Cover (' + ts + 'ms) menus=' + JSON.stringify(contextMenus().map((m) => [...m.querySelectorAll('.context-menu-item button')].map((b) => textOf(b) || b.getAttribute('aria-label')).join(','))))
     );
     await clickEl(cover, 'Cover');
-    await sleep(800);
+    await sleep(1200);
     log('after Cover click, dialogs=' + JSON.stringify(dialogTexts()) + ' createBtn=' + !!createBtn() + ' disabled=' + isDisabled(createBtn()));
+    await waitFor(
+      () => {
+        if (coverSourceBlock()) return 'BLOCK';
+        if ([...document.querySelectorAll('button')].some((b) => isVisible(b) && /keep current/i.test(textOf(b)))) return 'KEEP';
+        return null;
+      },
+      20000,
+      'cover panel opening (block or Keep Current)',
+      (ts) => log('  wait open (' + ts + 'ms) block=' + !!coverSourceBlock() + ' dialogs=' + JSON.stringify(dialogTexts()))
+    );
     await clickKeepCurrent(60000);
     phase = 'cover-wait';
     notify();
@@ -742,6 +782,7 @@
     currentIndex = -1;
     phase = 'cover-wait';
     log('=== START cover mode');
+    await dismissPrivacy();
     notify();
     try {
       await runCover();
