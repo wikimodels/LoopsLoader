@@ -1,5 +1,19 @@
 const SERVER = 'http://127.0.0.1:8977';
 
+function showError(msg) {
+  const b = document.getElementById('errbanner');
+  if (b) {
+    b.style.display = 'block';
+    b.textContent += (b.textContent ? '\n' : '') + new Date().toLocaleTimeString('ru-RU') + ' ' + msg;
+  }
+  try {
+    console.error('[LoopsLoader-popup]', msg);
+  } catch (e) {}
+}
+
+window.addEventListener('error', (e) => showError('error: ' + e.message + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+window.addEventListener('unhandledrejection', (e) => showError('promise: ' + (e.reason && (e.reason.message || e.reason) || String(e.reason))));
+
 const els = {
   srv: document.getElementById('srv'),
   phase: document.getElementById('phase'),
@@ -158,8 +172,16 @@ els.probe.addEventListener('click', async () => {
   }
 });
 
-(async function init() {
-  logline('popup opened');
+(function () {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => run().catch((e) => showError('init failed: ' + (e && e.message ? e.message : String(e)))));
+  } else {
+    run().catch((e) => showError('init failed: ' + (e && e.message ? e.message : String(e))));
+  }
+})();
+
+async function run() {
+  logline('popup opened (DOM loaded)');
   tab = await findSunoTab();
   if (!tab) els.phase.textContent = 'open suno.com first';
   await pingServer();
@@ -174,4 +196,4 @@ els.probe.addEventListener('click', async () => {
       }
     }, 300);
   }
-})();
+}
