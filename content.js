@@ -102,11 +102,21 @@
     return [...document.querySelectorAll('[role="dialog"]')].map((d) => textOf(d).slice(0, 120));
   }
 
+  function isVisible(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function errorTexts() {
     const out = [];
     const sels = ['[role="alert"]', '[role="status"]', '[class*="Toast"]', '[class*="toast"]', '[class*="error"]', '[class*="Error"]', '[class*="alert"]', '[class*="Alert"]'];
     for (const sel of sels) {
       for (const el of document.querySelectorAll(sel)) {
+        if (!isVisible(el)) continue;
         const t = textOf(el);
         if (t && t.length < 300 && t.length > 2) out.push(t);
       }
@@ -370,45 +380,44 @@
     return name.replace(/\.[a-z0-9]+$/i, '');
   }
 
-  function playCardWithName(stem) {
+  function clipCardReady(stem) {
     for (const p of document.querySelectorAll(SEL_PLAY)) {
       let cur = p.parentElement;
       for (let i = 0; i < 4 && cur; i++) {
-        if (textOf(cur).includes(stem)) return p;
+        if (textOf(cur).includes(stem) && cur.querySelector('canvas')) return p;
         cur = cur.parentElement;
       }
     }
     return null;
   }
 
-  async function stepLoaded(name, prevCount) {
+  async function stepLoaded(name) {
     phase = 'waiting';
     notify();
     const stem = stemOf(name);
-    log('--- step: wait clip card "' + stem + '" + play button (plays before=' + prevCount + ')');
+    log('--- step: wait editor clip card "' + stem + '" (name + play button + waveform, not spinner)');
     await waitFor(
       () => {
-        const err = errorTexts().join(' ').toLowerCase();
-        if (/invalid upload/.test(err)) {
+        const errs = errorTexts().join(' ').toLowerCase();
+        if (/invalid upload/.test(errs)) {
           if (!invalidUpload) {
             invalidUpload = true;
             log('Suno signals: Invalid upload. Please try again.');
           }
           return 'INVALID';
         }
-        if (document.querySelectorAll(SEL_PLAY).length <= prevCount) return null;
-        return playCardWithName(stem) ? 'LOADED' : null;
+        return clipCardReady(stem) ? 'LOADED' : null;
       },
       T.LOAD,
-      'clip card loaded',
-      (ts) => log('  waiting load (' + ts + 'ms) playCount=' + document.querySelectorAll(SEL_PLAY).length + ' nameHit=' + !!playCardWithName(stem) + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
+      'clip card ready',
+      (ts) => log('  waiting clip card (' + ts + 'ms) cardReady=' + !!clipCardReady(stem) + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
     if (invalidUpload) {
       invalidUpload = false;
       throw new Error('invalid upload (Suno rejected the file)');
     }
     await sleep(1000);
-    log('clip card loaded: ' + stem);
+    log('clip card ready: ' + stem);
   }
 
   async function closeOpenPanels() {
@@ -448,7 +457,7 @@
         log('play buttons before Continue: ' + prevCount);
         await pickLoopAndContinue();
         await stepOverwriteIfShown();
-        await stepLoaded(name, prevCount);
+        await stepLoaded(name);
         statuses[name] = 'ok';
         log('=== OK: ' + name);
         notify();
