@@ -362,17 +362,46 @@
     log('Keep Current clicked');
   }
 
+  let invalidUpload = false;
+
   async function stepLoaded(prevCount) {
     phase = 'waiting';
     notify();
     log('--- step: wait clip load (play buttons before=' + prevCount + ')');
     await waitFor(
-      () => document.querySelectorAll(SEL_PLAY).length > prevCount,
+      () => {
+        const err = errorTexts().join(' ').toLowerCase();
+        if (/invalid upload/.test(err)) {
+          if (!invalidUpload) {
+            invalidUpload = true;
+            log('Suno signals: Invalid upload. Please try again.');
+          }
+          return 'INVALID';
+        }
+        return document.querySelectorAll(SEL_PLAY).length > prevCount;
+      },
       T.LOAD,
       'clip loaded',
       (ts) => log('  waiting load (' + ts + 'ms) playCount=' + document.querySelectorAll(SEL_PLAY).length + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
+    if (invalidUpload) {
+      invalidUpload = false;
+      throw new Error('invalid upload (Suno rejected the file)');
+    }
     log('clip loaded, playCount=' + document.querySelectorAll(SEL_PLAY).length);
+  }
+
+  async function closeOpenPanels() {
+    const ds = document.querySelectorAll('[role="dialog"]');
+    for (const d of ds) {
+      if (textOf(d).includes('Privacy Preference Center')) continue;
+      const closeBtn = d.querySelector('button[aria-label="Close"]') || btnByText(d, 'Cancel');
+      if (closeBtn) {
+        log('closing leftover panel');
+        dispatchClick(closeBtn);
+        await sleep(400);
+      }
+    }
   }
 
   async function runLoop(name) {
@@ -380,25 +409,40 @@
     notify();
     log('--- step 1: get file from server');
     const file = await fetchLoopFile(name);
-    log('--- step 2: inject file into Suno input (menu skipped)');
-    let panel = await tryInjectAndWaitPanel(file, T.PANEL);
-    if (!panel) {
-      log('--- step 3: fallback - open Audio+ menu and press Upload');
-      await openMenuAndUpload();
-      panel = await tryInjectAndWaitPanel(file, T.PANEL);
-      if (!panel) {
-        log('final dialogs:', JSON.stringify(dialogTexts()));
-        throw new Error('upload did not start');
+    let lastErr = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      log('=== attempt ' + attempt + '/3 for ' + name);
+      try {
+        log('--- step 2: inject file into Suno input (menu skipped)');
+        let panel = await tryInjectAndWaitPanel(file, T.PANEL);
+        if (!panel) {
+          log('--- step 3: fallback - open Audio+ menu and press Upload');
+          await openMenuAndUpload();
+          panel = await tryInjectAndWaitPanel(file, T.PANEL);
+          if (!panel) {
+            log('final dialogs:', JSON.stringify(dialogTexts()));
+            throw new Error('upload did not start');
+          }
+        }
+        const prevCount = document.querySelectorAll(SEL_PLAY).length;
+        log('play buttons before Continue: ' + prevCount);
+        await pickLoopAndContinue();
+        await stepOverwriteIfShown();
+        await stepLoaded(prevCount);
+        statuses[name] = 'ok';
+        log('=== OK: ' + name);
+        notify();
+        return;
+      } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        if (msg === 'stopped') throw e;
+        lastErr = msg;
+        log('=== attempt ' + attempt + ' failed: ' + msg);
+        await sleep(2000);
+        await closeOpenPanels();
       }
     }
-    const prevCount = document.querySelectorAll(SEL_PLAY).length;
-    log('play buttons before Continue: ' + prevCount);
-    await pickLoopAndContinue();
-    await stepOverwriteIfShown();
-    await stepLoaded(prevCount);
-    statuses[name] = 'ok';
-    log('=== OK: ' + name);
-    notify();
+    throw new Error('3 attempts failed: ' + lastErr);
   }
 
   async function start(list) {
@@ -429,6 +473,7 @@
         await sleep(1500);
       }
       notify();
+      if (!stopped) await sleep(3000);
     }
     running = false;
     phase = stopped ? 'stopped' : 'done';
