@@ -715,7 +715,7 @@
       (ts) => log('  wait Cover (' + ts + 'ms) menus=' + JSON.stringify(contextMenus().map((m) => [...m.querySelectorAll('.context-menu-item button')].map((b) => textOf(b) || b.getAttribute('aria-label')).join(','))))
     );
     await clickEl(cover, 'Cover');
-    await sleep(1200);
+    await sleep(3000);
     log('after Cover click, dialogs=' + JSON.stringify(dialogTexts()) + ' createBtn=' + !!createBtn() + ' disabled=' + isDisabled(createBtn()));
     await waitFor(
       () => {
@@ -728,6 +728,7 @@
       (ts) => log('  wait open (' + ts + 'ms) block=' + !!coverSourceBlock() + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
     await clickKeepCurrent(5000);
+    await sleep(3000);
     phase = 'cover-wait';
     notify();
     const waveBase = waveAggCount();
@@ -743,7 +744,7 @@
       'cover clip in Cover condition block',
       (ts) => log('  wait cover (' + ts + 'ms) block=' + !!coverSourceBlock() + ' ready=' + JSON.stringify(coverSourceReady(stem)) + ' wave=' + (waveAggCount() - waveBase) + ' play=' + document.querySelectorAll(SEL_PLAY).length + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
-    await sleep(1000);
+    await sleep(3000);
     log('cover clip confirmed: ' + stem + ' via=' + done);
     phase = 'cover-create';
     notify();
