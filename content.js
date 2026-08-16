@@ -4,8 +4,20 @@
     PANEL: 30000,
     FILE_READY: 180000,
     KEEP_DIALOG: 90000,
-    LOAD: 240000
+    LOAD: 240000,
+    COVER: 240000
   };
+
+  const SPIN_SELS = [
+    'svg.animate-spin',
+    '[role="progressbar"]',
+    '[class*="spinner"]',
+    '[class*="Spinner"]',
+    '[class*="loading"]',
+    '[class*="Loading"]',
+    '[data-state="loading"]',
+    '[aria-busy="true"]'
+  ];
 
   const MIME = {
     '.mp3': 'audio/mpeg',
@@ -84,7 +96,7 @@
   }
 
   function isDisabled(btn) {
-    return !btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true';
+    return !btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.hasAttribute('data-trigger-disabled');
   }
 
   function progressPct(scope) {
@@ -485,6 +497,235 @@
     log('clip confirmed: ' + stem + ' via=' + done);
   }
 
+  function rowName(row) {
+    const a = row.querySelector('.clip-title-wrapper a, a[href^="/song/"]');
+    if (a && textOf(a)) return textOf(a);
+    return (row.getAttribute('aria-label') || '').trim();
+  }
+
+  function contextMenus() {
+    return [...document.querySelectorAll('[data-context-menu="true"]')].filter(isVisible);
+  }
+
+  function menuItem(menu, text) {
+    for (const b of menu.querySelectorAll('.context-menu-item button')) {
+      if (textOf(b) === text || b.getAttribute('aria-label') === text) return b;
+    }
+    return null;
+  }
+
+  function hoverEl(el) {
+    const opts = { bubbles: true, cancelable: true, view: window };
+    for (const type of ['pointermove', 'pointerover', 'pointerenter', 'mouseover', 'mouseenter']) {
+      try {
+        el.dispatchEvent(new MouseEvent(type, opts));
+      } catch (e) {}
+    }
+  }
+
+  function pressEscape() {
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+    } catch (e) {}
+  }
+
+  function spinCount() {
+    const seen = new Set();
+    for (const sel of SPIN_SELS) {
+      for (const el of document.querySelectorAll(sel)) {
+        if (isVisible(el)) seen.add(el);
+      }
+    }
+    return seen.size;
+  }
+
+  function createBtn() {
+    return document.querySelector('button[aria-label="Create song"]');
+  }
+
+  function createReady() {
+    const b = createBtn();
+    return b && !isDisabled(b) ? b : null;
+  }
+
+  function clipCardNamed(stem) {
+    for (const p of document.querySelectorAll(SEL_PLAY)) {
+      let cur = p.parentElement;
+      for (let i = 0; i < 4 && cur; i++) {
+        if (textOf(cur).includes(stem)) return p;
+        cur = cur.parentElement;
+      }
+    }
+    return null;
+  }
+
+  async function clickKeepCurrent(timeout) {
+    phase = 'cover-keep';
+    notify();
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeout) {
+      if (stopped) throw new Error('stopped');
+      const keep = [...document.querySelectorAll('button')].find((b) => isVisible(b) && /keep current/i.test(textOf(b)));
+      if (keep) {
+        await clickEl(keep, 'Keep Current');
+        let closed = false;
+        for (let i = 0; i < 8 && !closed; i++) {
+          await sleep(250);
+          closed = ![...document.querySelectorAll('button')].some((b) => isVisible(b) && /keep current/i.test(textOf(b)));
+        }
+        log(closed ? 'Keep Current dismissed' : 'Keep Current still visible, clicking again');
+        if (closed) return true;
+        continue;
+      }
+      await sleep(250);
+    }
+    log('no Keep Current within ' + Math.round(timeout / 1000) + 's - continuing');
+    return false;
+  }
+
+  async function coverTrack(row, name) {
+    const stem = name;
+    log('--- cover: ' + name);
+    phase = 'cover-menu';
+    notify();
+    pressEscape();
+    await sleep(500);
+    const moreBtn = row.querySelector('button[aria-label="More options"]');
+    if (!moreBtn) throw new Error('More options button not found in row');
+    await clickEl(moreBtn, 'More options (' + name + ')');
+    await waitFor(
+      () => contextMenus().find((m) => menuItem(m, 'Remix')),
+      10000,
+      'context menu with Remix',
+      (ts) => log('  wait main menu (' + ts + 'ms) menus=' + JSON.stringify(contextMenus().map((m) => [...m.querySelectorAll('.context-menu-item button')].map((b) => textOf(b) || b.getAttribute('aria-label')).join(','))))
+    );
+    const remix = contextMenus().map((m) => menuItem(m, 'Remix')).find(Boolean);
+    hoverEl(remix);
+    log('hovered Remix, waiting submenu with Cover');
+    await sleep(800);
+    const cover = await waitFor(
+      () => contextMenus().map((m) => menuItem(m, 'Cover')).find(Boolean),
+      10000,
+      'Cover item in submenu',
+      (ts) => log('  wait Cover (' + ts + 'ms) menus=' + JSON.stringify(contextMenus().map((m) => [...m.querySelectorAll('.context-menu-item button')].map((b) => textOf(b) || b.getAttribute('aria-label')).join(','))))
+    );
+    await clickEl(cover, 'Cover');
+    await sleep(800);
+    await clickKeepCurrent(60000);
+    phase = 'cover-wait';
+    notify();
+    const waveBase = waveAggCount();
+    log('--- step: confirm "' + stem + '" in upload panel');
+    const done = await waitFor(
+      () => {
+        if (clipCardReady(stem)) return 'CARD';
+        if (clipCardNamed(stem)) return 'NAMED';
+        if (waveAggCount() > waveBase) return 'WAVE';
+        return null;
+      },
+      T.LOAD,
+      'cover clip in panel',
+      (ts) => log('  wait card (' + ts + 'ms) cardReady=' + !!clipCardReady(stem) + ' named=' + !!clipCardNamed(stem) + ' wave=' + (waveAggCount() - waveBase) + ' dialogs=' + JSON.stringify(dialogTexts()))
+    );
+    await sleep(1000);
+    log('cover clip confirmed: ' + stem + ' via=' + done);
+    phase = 'cover-create';
+    notify();
+    const create = await waitFor(
+      createReady,
+      60000,
+      'Create button enabled',
+      (ts) => log('  wait Create (' + ts + 'ms) disabled=' + isDisabled(createBtn()))
+    );
+    await clickEl(create, 'Create song');
+    phase = 'cover-spin';
+    notify();
+    const base = spinCount();
+    log('spinner baseline: ' + base);
+    await waitFor(
+      () => {
+        const b = createReady();
+        if (b && spinCount() <= base) return 'SPIN_DONE';
+        return null;
+      },
+      T.COVER,
+      'spinner gone + Create re-enabled',
+      (ts) => log('  wait spin (' + ts + 'ms) count=' + spinCount() + ' createReady=' + !!createReady())
+    );
+    log('cover done: ' + stem);
+  }
+
+  async function runCover() {
+    phase = 'cover-wait';
+    notify();
+    const rows = await waitFor(
+      () => {
+        const rs = [...document.querySelectorAll('[data-testid="clip-row"]')];
+        return rs.length ? rs : null;
+      },
+      30000,
+      'clip rows',
+      (ts) => log('  wait rows (' + ts + 'ms) count=' + document.querySelectorAll('[data-testid="clip-row"]').length)
+    );
+    const usable = rows.filter((r) => !r.getAttribute('data-clip-status') || r.getAttribute('data-clip-status') === 'complete');
+    const skipped = rows.length - usable.length;
+    if (skipped) log('skipped ' + skipped + ' non-complete row(s)');
+    loops = usable.map(rowName).filter(Boolean);
+    total = loops.length;
+    for (const n of loops) statuses[n] = 'pending';
+    log('=== START cover walk: ' + total + ' tracks');
+    notify();
+    for (let i = 0; i < usable.length; i++) {
+      currentIndex = i;
+      const row = usable[i];
+      const name = loops[i];
+      statuses[name] = 'uploading';
+      log('=== cover ' + (i + 1) + '/' + total + ': ' + name);
+      notify();
+      try {
+        await coverTrack(row, name);
+        statuses[name] = 'ok';
+        log('=== OK: ' + name);
+      } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        if (stopped) {
+          statuses[name] = 'stopped';
+          log('=== STOPPED at ' + name);
+          break;
+        }
+        statuses[name] = 'err';
+        log('=== FAILED: ' + name + ' -> ' + msg);
+        pressEscape();
+        await sleep(1500);
+      }
+      notify();
+      if (!stopped) await sleep(3000);
+    }
+    phase = stopped ? 'stopped' : 'done';
+  }
+
+  async function startCover() {
+    if (running) return { ok: false, error: 'already running' };
+    running = true;
+    stopped = false;
+    currentIndex = -1;
+    phase = 'cover-wait';
+    log('=== START cover mode');
+    notify();
+    try {
+      await runCover();
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e);
+      if (msg !== 'stopped') log('=== cover walk failed: ' + msg);
+    }
+    running = false;
+    stopped = false;
+    log('=== COVER FINISHED phase=' + phase);
+    notify();
+    return { ok: true };
+  }
+
   async function closeOpenPanels() {
     const ds = document.querySelectorAll('[role="dialog"]');
     for (const d of ds) {
@@ -597,7 +838,9 @@
       dialogs: dialogTexts(),
       contextMenuItems: menus,
       fileInputs: inputs,
-      server: srv
+      server: srv,
+      clips: [...document.querySelectorAll('[data-testid="clip-row"]')].map(rowName).filter(Boolean),
+      createButton: !!createBtn()
     };
   }
 
@@ -611,6 +854,12 @@
     if (!msg) return;
     if (msg.type === 'start') {
       start(msg.loops || [])
+        .then((r) => sendResponse(r))
+        .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
+      return true;
+    }
+    if (msg.type === 'start-cover') {
+      startCover()
         .then((r) => sendResponse(r))
         .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
       return true;

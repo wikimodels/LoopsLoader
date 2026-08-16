@@ -56,6 +56,32 @@ body {
   text-overflow: ellipsis;
 }
 
+.modes {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px 0;
+}
+
+.mode {
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .05);
+  color: #9aa0b0;
+  border-radius: 999px;
+  padding: 6px 0;
+  font: 600 12px/1 system-ui, sans-serif;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.mode:hover { background: rgba(255, 255, 255, .1); }
+
+.mode.active {
+  background: linear-gradient(90deg, #ffd43b, #ff922b);
+  color: #10121c;
+  border-color: transparent;
+}
+
 .wrap {
   overflow-y: auto;
   max-height: 260px;

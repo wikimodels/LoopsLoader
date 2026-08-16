@@ -21,11 +21,21 @@ const els = {
   log: document.getElementById('log'),
   start: document.getElementById('start'),
   stop: document.getElementById('stop'),
-  probe: document.getElementById('probe')
+  probe: document.getElementById('probe'),
+  modes: document.getElementById('modes')
 };
 
 let tab = null;
 let loops = [];
+let mode = 'loops';
+
+function setMode(m) {
+  mode = m;
+  for (const b of els.modes.querySelectorAll('.mode')) {
+    b.classList.toggle('active', b.dataset.mode === m);
+  }
+  els.start.textContent = m === 'cover' ? 'Start covers' : 'Start';
+}
 
 function logline(...a) {
   const line = new Date().toLocaleTimeString('ru-RU') + ' [popup] ' + a.map((x) => (typeof x === 'string' ? x : x && x.message ? x.message : JSON.stringify(x))).join(' ');
@@ -164,7 +174,7 @@ function render(statuses, currentIndex) {
   if (!loops.length) {
     const d = document.createElement('div');
     d.className = 'item';
-    d.innerHTML = '<span class="nm">no loops found (server empty?)</span>';
+    d.innerHTML = '<span class="nm">' + (mode === 'cover' ? 'no clips found (open library?)' : 'no loops found (server empty?)') + '</span>';
     els.list.appendChild(d);
     return;
   }
@@ -172,7 +182,7 @@ function render(statuses, currentIndex) {
     const st = (statuses && statuses[l.name]) || 'pending';
     const d = document.createElement('div');
     d.className = 'item' + (st === 'ok' ? ' ok' : st === 'err' ? ' err' : i === currentIndex ? ' cur' : '');
-    d.innerHTML = '<span class="ic">' + (IC[st] || '·') + '</span><span class="nm" title="' + l.name + '">' + l.name + '</span><span class="sz">' + fmtSize(l.size) + '</span>';
+    d.innerHTML = '<span class="ic">' + (IC[st] || '·') + '</span><span class="nm" title="' + l.name + '">' + l.name + '</span><span class="sz">' + (l.size != null ? fmtSize(l.size) : '') + '</span>';
     els.list.appendChild(d);
   });
 }
@@ -210,11 +220,51 @@ chrome.runtime.onMessage.addListener((msg) => {
   renderLog(msg.logs || []);
 });
 
+els.modes.addEventListener('click', async (e) => {
+  const b = e.target.closest('.mode');
+  if (!b || b.dataset.mode === mode) return;
+  setMode(b.dataset.mode);
+  logline('mode -> ' + mode);
+  if (mode === 'cover') {
+    tab = await findSunoTab();
+    if (!tab) {
+      logline('no suno tab -> open suno.com first');
+      loops = [];
+      render({}, -1);
+      return;
+    }
+    try {
+      const r = await chrome.tabs.sendMessage(tab.id, { type: 'probe' });
+      const clips = (r && r.probe && r.probe.clips) || [];
+      loops = clips.map((n) => ({ name: n, size: null }));
+      logline('clips on page: ' + clips.length + (clips.length ? ' (first: ' + clips[0] + ')' : ''));
+      if (!clips.length) logline('no clips -> make sure library list is open (with rows)');
+      render({}, -1);
+    } catch (e) {
+      logline('cover probe ERROR: ' + e.message + ' (reload suno tab, re-open popup)');
+    }
+    return;
+  }
+  await ensureServer();
+  render({}, -1);
+});
+
 els.start.addEventListener('click', async () => {
-  logline('Start pressed');
+  logline('Start pressed (' + mode + ')');
   tab = await findSunoTab();
   if (!tab) {
     logline('ABORT: no suno tab -> open suno.com first');
+    return;
+  }
+  if (mode === 'cover') {
+    try {
+      const r = await chrome.tabs.sendMessage(tab.id, { type: 'start-cover' });
+      logline('cover start response: ' + JSON.stringify(r));
+      if (r && r.error) logline('cover start error: ' + r.error);
+    } catch (e) {
+      logline('cover start sendMessage ERROR: ' + e.message + ' (reload suno tab, re-open popup)');
+    }
+    refreshState();
     return;
   }
   const ok = await ensureServer();
