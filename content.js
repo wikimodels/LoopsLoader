@@ -161,8 +161,11 @@
   }
 
   function uploadPanel() {
-    const d = document.querySelector('[role="dialog"]');
-    return d && btnByText(d, 'Continue') ? d : null;
+    const ds = document.querySelectorAll('[role="dialog"]');
+    for (const d of ds) {
+      if (btnByText(d, 'Continue')) return d;
+    }
+    return null;
   }
 
   function uploadStatusText(d) {
@@ -176,8 +179,11 @@
   }
 
   function overwriteDialog() {
-    const d = document.querySelector('[role="dialog"]');
-    return d && textOf(d).includes('Overwrite Lyrics & Styles') ? d : null;
+    const ds = document.querySelectorAll('[role="dialog"]');
+    for (const d of ds) {
+      if (textOf(d).includes('Overwrite Lyrics & Styles')) return d;
+    }
+    return null;
   }
 
   async function waitPanel(timeout) {
@@ -297,6 +303,7 @@
       log('upload panel closed, assuming upload completed');
       return;
     }
+    await sleep(1000);
     const chip = btnByText(panel, 'Loop');
     if (chip) {
       log('Loop chip: aria-pressed=' + (chip.getAttribute('aria-pressed') || 'null'));
@@ -305,11 +312,12 @@
     } else {
       log('Loop chip NOT found in panel');
     }
+    await sleep(1000);
     const contPanel = uploadPanel() || panel;
     log('waiting Continue enabled');
     await waitFor(
       () => !isDisabled(btnByText(contPanel, 'Continue')),
-      60000,
+      30000,
       'Continue enabled',
       (ts) => log('  wait Continue (' + ts + 'ms) disabled=' + isDisabled(btnByText(contPanel, 'Continue')))
     );
