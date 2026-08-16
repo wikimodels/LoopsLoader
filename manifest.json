@@ -27,7 +27,19 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Loops Loader"
+    "default_title": "Loops Loader",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsqjNVAoOCkE52QdDvLvWQbXgZZ3lpwNE/RagJMWgV1y1dhNs4sTxwb53nXJd/PG6Z6vpYgITVnn30y9SPC8OmMO+v/hdt0W1xbeyCl1kD2Q6wmN//jT9gcSJOozzj10+rO2v+fEjqJki/40gYjJB+4lYOuneFL8pdY2kGWKhw0RILQpg0dDrP42PnpELwQ2OubpVIPsg2D/8b7TEbadxa3pXlkcpwx5VM9upRPSuMWWS6NPyGqcTdETc8MwF2YdolJ/wrgxNjy72lODb8yyixDTYVltsp7zB9noEFagVDejSwo2L3VJfqUQ8mxaVeTKjVR82JqkP9SKvUqP2w91o0wIDAQAB"
 }
