@@ -96,7 +96,7 @@
   }
 
   function isDisabled(btn) {
-    return !btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.hasAttribute('data-trigger-disabled');
+    return !btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true';
   }
 
   function progressPct(scope) {
