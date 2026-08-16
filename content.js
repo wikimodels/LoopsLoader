@@ -1,8 +1,6 @@
 (function () {
   const SERVER = 'http://127.0.0.1:8977';
   const T = {
-    MENU: 8000,
-    INPUT: 15000,
     PANEL: 30000,
     FILE_READY: 180000,
     KEEP_DIALOG: 90000,
@@ -104,6 +102,13 @@
     return [...document.querySelectorAll('[role="dialog"]')].map((d) => textOf(d).slice(0, 120));
   }
 
+  function visibleBtnTexts() {
+    return [...document.querySelectorAll('button')]
+      .map(textOf)
+      .filter((t) => t && t.length < 60)
+      .slice(0, 40);
+  }
+
   async function waitFor(fn, timeout, desc, poll) {
     const t0 = Date.now();
     let lastPoll = 0;
@@ -123,14 +128,26 @@
     throw new Error('timeout ' + Math.round(timeout / 1000) + 's: ' + desc);
   }
 
+  function dispatchClick(el) {
+    const opts = { bubbles: true, cancelable: true, view: window, button: 0 };
+    for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'mouseover', 'mouseenter', 'click']) {
+      try {
+        el.dispatchEvent(new MouseEvent(type, opts));
+      } catch (e) {}
+    }
+    try {
+      el.click();
+    } catch (e) {}
+  }
+
   async function clickEl(el, desc) {
     if (!el) throw new Error('not found: ' + desc);
     log('clicking: ' + desc);
     await safe(() => {
       el.scrollIntoView({ block: 'center', inline: 'center' });
     });
-    el.click();
-    await sleep(300);
+    dispatchClick(el);
+    await sleep(400);
   }
 
   async function pingServer() {
@@ -143,45 +160,35 @@
     }
   }
 
-  async function stepMenu() {
-    phase = 'menu';
-    notify();
-    log('--- step 1: open Audio+ menu');
-    log('page:', location.href, 'title=' + (document.title || '').slice(0, 80), 'readyState=' + document.readyState);
-    const btn = await waitFor(
-      () => document.querySelector(SEL_AUDIO),
-      T.MENU,
-      'Audio+ button',
-      (ts) => log('  wait Audio+ (' + ts + 'ms) count=' + document.querySelectorAll(SEL_AUDIO).length)
-    );
-    log('Audio+ button found, clicking');
-    btn.click();
-    await sleep(500);
-    const items = [...document.querySelectorAll('button')].filter((b) => ['Browse', 'Upload', 'Record'].includes(textOf(b)));
-    log('context menu items found:', items.map((b) => textOf(b)).join(' | ') || '<none>, trying loose search');
-    let up = items.find((b) => textOf(b) === 'Upload');
-    if (!up) {
-      up = btnByText(document, 'Upload');
-      if (up) log('Upload found via loose text match');
-    }
-    if (!up) throw new Error('menu item "Upload" not found after clicking Audio+');
-    await clickEl(up, 'Upload');
-    log('Upload clicked');
+  function uploadPanel() {
+    const d = document.querySelector('[role="dialog"]');
+    return d && btnByText(d, 'Continue') ? d : null;
   }
 
-  async function stepSetFile(name) {
-    phase = 'file';
-    notify();
-    log('--- step 2: set file ' + name);
-    const ins0 = [...document.querySelectorAll('input[type="file"]')];
-    log('file inputs on page:', ins0.length, '->', ins0.map((i) => 'accept=' + (i.getAttribute('accept') || '*') + (i.multiple ? ' multi' : '')).join(' ; ') || '');
-    const input = await waitFor(
-      () => document.querySelector('input[type="file"]'),
-      T.INPUT,
-      'file input',
-      (ts) => log('  wait input[type=file] (' + ts + 'ms) count=' + document.querySelectorAll('input[type="file"]').length)
-    );
-    log('using input: accept=' + (input.getAttribute('accept') || '*') + ' multiple=' + !!input.multiple);
+  function overwriteDialog() {
+    const d = document.querySelector('[role="dialog"]');
+    return d && textOf(d).includes('Overwrite Lyrics & Styles') ? d : null;
+  }
+
+  async function waitPanel(timeout) {
+    return waitFor(
+      uploadPanel,
+      timeout,
+      'upload panel (dialog with Continue)',
+      (ts) => log('  wait upload panel (' + ts + 'ms) dialogs=' + JSON.stringify(dialogTexts()))
+    ).catch(() => null);
+  }
+
+  function injectFile(input, file) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    log('files assigned to input: ' + input.files.length + ' [' + (input.files[0] && input.files[0].name) + ']');
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  async function fetchLoopFile(name) {
     const url = SERVER + '/loop/' + encodeURIComponent(name);
     let resp = null;
     await waitFor(
@@ -195,83 +202,107 @@
         }
       },
       15000,
-      'fetch ' + name + ' from ' + SERVER + ' (run.bat? server.js?)',
+      'fetch ' + name + ' from ' + SERVER,
       (ts) => log('  wait local server (' + ts + 'ms) error=' + (resp ? 'http ' + resp.status : 'NO RESPONSE'))
     );
     const buf = await resp.arrayBuffer();
-    log('fetched from server OK:', (buf.byteLength / 1048576).toFixed(2) + ' MB');
+    log('fetched from server: ' + (buf.byteLength / 1048576).toFixed(2) + ' MB');
     const ext = (name.match(/\.[a-z0-9]+$/i) || [''])[0].toLowerCase();
-    const file = new File([buf], name.split('/').pop(), { type: MIME[ext] || 'audio/mpeg' });
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    try {
-      input.files = dt.files;
-      log('input.files assigned OK, files=' + input.files.length + ' name=' + (input.files[0] && input.files[0].name));
-    } catch (e) {
-      throw new Error('cannot assign input.files: ' + (e.message || e));
-    }
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    log('change event dispatched');
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    log('input event dispatched');
+    return new File([buf], name.split('/').pop(), { type: MIME[ext] || 'audio/mpeg' });
   }
 
-  async function stepUploadPanel() {
+  async function openMenuAndUpload() {
+    phase = 'menu';
+    notify();
+    log('--- fallback: open Audio+ menu');
+    const btn = await waitFor(
+      () => document.querySelector(SEL_AUDIO),
+      8000,
+      'Audio+ button',
+      (ts) => log('  wait Audio+ (' + ts + 'ms) count=' + document.querySelectorAll(SEL_AUDIO).length)
+    );
+    await clickEl(btn, 'Audio+ button');
+    await sleep(1500);
+    const items = [...document.querySelectorAll('button')].filter((b) => ['Browse', 'Upload', 'Record'].includes(textOf(b)));
+    log('context menu items:', items.map((b) => textOf(b)).join(' | ') || '<none>');
+    let up = items.find((b) => textOf(b) === 'Upload') || btnByText(document, 'Upload');
+    if (!up) {
+      log('suspicious buttons:', JSON.stringify(visibleBtnTexts()));
+      throw new Error('menu item "Upload" not found');
+    }
+    await clickEl(up, 'Upload');
+    log('Upload clicked (native dialog may open - press Esc if so)');
+    await sleep(1000);
+  }
+
+  async function tryInjectAndWaitPanel(file, timeout) {
+    const inputs = [...document.querySelectorAll('input[type="file"]')];
+    log('file inputs found:', inputs.length, '->', inputs.map((i) => 'accept=' + (i.getAttribute('accept') || '*')).join(' ; ') || '');
+    if (!inputs.length) {
+      log('no file inputs on page at all');
+      return null;
+    }
+    const candidates = [inputs[inputs.length - 1], inputs[0]];
+    const tried = [];
+    for (const input of candidates) {
+      if (tried.includes(input)) continue;
+      tried.push(input);
+      log('injecting into input (index ' + inputs.indexOf(input) + ') accept=' + (input.getAttribute('accept') || '*'));
+      injectFile(input, file);
+      await sleep(1200);
+      const dlg = await waitPanel(timeout / 2);
+      if (dlg) {
+        log('upload panel appeared after inject');
+        return dlg;
+      }
+      log('no panel after inject on this input, dialogs=' + JSON.stringify(dialogTexts()));
+    }
+    return null;
+  }
+
+  async function pickLoopAndContinue(dialog) {
     phase = 'upload';
     notify();
-    log('--- step 3: wait upload panel, pick Loop, Continue');
-    const dialog = await waitFor(
-      () => {
-        const d = document.querySelector('[role="dialog"]');
-        return d && btnByText(d, 'Continue') ? d : null;
-      },
-      T.PANEL,
-      'upload panel (dialog with Continue)',
-      (ts) => log('  wait upload panel (' + ts + 'ms) dialogs=' + JSON.stringify(dialogTexts()))
-    );
-    log('upload panel open');
     const chip = btnByText(dialog, 'Loop');
     if (chip) {
       log('Loop chip found, aria-pressed=' + (chip.getAttribute('aria-pressed') || 'null'));
       if (chip.getAttribute('aria-pressed') !== 'true') await clickEl(chip, 'Loop chip');
       else log('Loop chip already pressed');
     } else {
-      log('Loop chip NOT found in panel');
+      log('Loop chip NOT found in upload panel');
     }
+    log('waiting for upload to finish (Continue enabled)');
     await waitFor(
       () => !isDisabled(btnByText(dialog, 'Continue')),
       T.FILE_READY,
-      'Continue enabled (file upload finished)',
+      'Continue enabled',
       (ts) => {
         const bar = progressPct(dialog);
         log('  uploading (' + ts + 'ms)' + (bar != null ? ' progress=' + bar + '%' : '') + ' continueDisabled=' + isDisabled(btnByText(dialog, 'Continue')));
       }
     );
-    log('Continue enabled');
-    await clickEl(btnByText(dialog, 'Continue'), 'Continue');
+    log('Continue enabled, clicking');
+    dispatchClick(btnByText(dialog, 'Continue'));
+    await sleep(400);
     log('Continue clicked');
   }
 
   async function stepKeepCurrent() {
     phase = 'keep';
     notify();
-    log('--- step 4: wait "Overwrite Lyrics & Styles?" -> Keep Current');
+    log('--- step: wait "Overwrite Lyrics & Styles?" -> Keep Current');
     const dialog = await waitFor(
-      () => {
-        const d = document.querySelector('[role="dialog"]');
-        return d && textOf(d).includes('Overwrite Lyrics & Styles') ? d : null;
-      },
+      overwriteDialog,
       T.KEEP_DIALOG,
       'Overwrite lyrics dialog',
       (ts) => log('  wait overwrite dialog (' + ts + 'ms) dialogs=' + JSON.stringify(dialogTexts()))
     ).catch(() => null);
     if (!dialog) {
-      log('overwrite dialog NOT shown (60s wait done) - continuing anyway');
+      log('overwrite dialog NOT shown - continuing');
       return;
     }
-    log('overwrite dialog found');
     const keep = btnByText(dialog, 'Keep Current');
-    if (!keep) throw new Error('"Keep Current" button not found in dialog');
+    if (!keep) throw new Error('"Keep Current" button not found');
     await clickEl(keep, 'Keep Current');
     log('Keep Current clicked');
   }
@@ -279,11 +310,11 @@
   async function stepLoaded(prevCount) {
     phase = 'waiting';
     notify();
-    log('--- step 5: wait clip load (play buttons before=' + prevCount + ')');
+    log('--- step: wait clip load (play buttons before=' + prevCount + ')');
     await waitFor(
       () => document.querySelectorAll(SEL_PLAY).length > prevCount,
       T.LOAD,
-      'clip loaded (new play button)',
+      'clip loaded',
       (ts) => log('  waiting load (' + ts + 'ms) playCount=' + document.querySelectorAll(SEL_PLAY).length + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
     log('clip loaded, playCount=' + document.querySelectorAll(SEL_PLAY).length);
@@ -292,9 +323,20 @@
   async function runLoop(name) {
     statuses[name] = 'uploading';
     notify();
-    await stepMenu();
-    await stepSetFile(name);
-    await stepUploadPanel();
+    log('--- step 1: get file from server');
+    const file = await fetchLoopFile(name);
+    log('--- step 2: inject file into Suno input (menu skipped)');
+    let panel = await tryInjectAndWaitPanel(file, T.PANEL);
+    if (!panel) {
+      log('--- step 3: fallback - open Audio+ menu and press Upload');
+      await openMenuAndUpload();
+      panel = await tryInjectAndWaitPanel(file, T.PANEL);
+      if (!panel) {
+        log('final dialogs:', JSON.stringify(dialogTexts()));
+        throw new Error('upload did not start');
+      }
+    }
+    await pickLoopAndContinue(panel);
     await stepKeepCurrent();
     const prev = document.querySelectorAll(SEL_PLAY).length;
     await stepLoaded(prev);
