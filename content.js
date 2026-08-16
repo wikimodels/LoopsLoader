@@ -165,6 +165,16 @@
     return d && btnByText(d, 'Continue') ? d : null;
   }
 
+  function uploadStatusText(d) {
+    if (!d) return 'CLOSED';
+    const spans = d.querySelectorAll('span');
+    for (const s of spans) {
+      const t = (s.textContent || '').trim();
+      if (/^Upload(ing|ed)( Clip)?$/i.test(t)) return t;
+    }
+    return null;
+  }
+
   function overwriteDialog() {
     const d = document.querySelector('[role="dialog"]');
     return d && textOf(d).includes('Overwrite Lyrics & Styles') ? d : null;
@@ -260,29 +270,51 @@
     return null;
   }
 
-  async function pickLoopAndContinue(dialog) {
+  async function pickLoopAndContinue() {
     phase = 'upload';
     notify();
-    const chip = btnByText(dialog, 'Loop');
+    log('waiting for upload to finish (status text -> "Uploaded")');
+    const done = await waitFor(
+      () => {
+        const d = uploadPanel();
+        if (!d) return 'CLOSED';
+        const st = uploadStatusText(d);
+        if (st && /Uploaded/i.test(st)) return 'DONE';
+        return null;
+      },
+      T.FILE_READY,
+      'upload finished (Uploaded)',
+      (ts) => {
+        const d = uploadPanel();
+        const st = d ? uploadStatusText(d) : 'CLOSED';
+        const bar = d ? progressPct(d) : null;
+        log('  upload status (' + ts + 'ms): ' + (st || '?') + (bar != null ? ' ' + bar + '%' : '') + ' dialogs=' + JSON.stringify(dialogTexts()));
+      }
+    );
+    log('upload finished: ' + done);
+    let panel = uploadPanel();
+    if (!panel) {
+      log('upload panel closed, assuming upload completed');
+      return;
+    }
+    const chip = btnByText(panel, 'Loop');
     if (chip) {
-      log('Loop chip found, aria-pressed=' + (chip.getAttribute('aria-pressed') || 'null'));
+      log('Loop chip: aria-pressed=' + (chip.getAttribute('aria-pressed') || 'null'));
       if (chip.getAttribute('aria-pressed') !== 'true') await clickEl(chip, 'Loop chip');
       else log('Loop chip already pressed');
     } else {
-      log('Loop chip NOT found in upload panel');
+      log('Loop chip NOT found in panel');
     }
-    log('waiting for upload to finish (Continue enabled)');
+    const contPanel = uploadPanel() || panel;
+    log('waiting Continue enabled');
     await waitFor(
-      () => !isDisabled(btnByText(dialog, 'Continue')),
-      T.FILE_READY,
+      () => !isDisabled(btnByText(contPanel, 'Continue')),
+      60000,
       'Continue enabled',
-      (ts) => {
-        const bar = progressPct(dialog);
-        log('  uploading (' + ts + 'ms)' + (bar != null ? ' progress=' + bar + '%' : '') + ' continueDisabled=' + isDisabled(btnByText(dialog, 'Continue')));
-      }
+      (ts) => log('  wait Continue (' + ts + 'ms) disabled=' + isDisabled(btnByText(contPanel, 'Continue')))
     );
     log('Continue enabled, clicking');
-    dispatchClick(btnByText(dialog, 'Continue'));
+    dispatchClick(btnByText(contPanel, 'Continue'));
     await sleep(400);
     log('Continue clicked');
   }
@@ -336,7 +368,7 @@
         throw new Error('upload did not start');
       }
     }
-    await pickLoopAndContinue(panel);
+    await pickLoopAndContinue();
     await stepKeepCurrent();
     const prev = document.querySelectorAll(SEL_PLAY).length;
     await stepLoaded(prev);
