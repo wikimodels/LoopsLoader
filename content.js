@@ -403,7 +403,7 @@
     log('no overwrite dialog shown - continuing');
   }
 
-  let invalidUpload = false;
+  let invalidToastAt = 0;
 
   function stemOf(name) {
     return name.replace(/\.[a-z0-9]+$/i, '');
@@ -435,30 +435,31 @@
     phase = 'waiting';
     notify();
     const stem = stemOf(name);
+    invalidToastAt = 0;
     log('--- step: wait clip "' + stem + '" (waveform-aggregates API OR editor card with name + play + canvas)');
-    await waitFor(
+    const done = await waitFor(
       () => {
         const errs = errorTexts().join(' ').toLowerCase();
         if (/invalid upload/.test(errs)) {
-          if (!invalidUpload) {
-            invalidUpload = true;
-            log('Suno signals: Invalid upload. Please try again.');
+          if (!invalidToastAt) {
+            invalidToastAt = Date.now();
+            log('Suno toast: "Invalid upload" (info - clip may still load, giving it 60s)');
           }
-          return 'INVALID';
         }
         if (waveAggCount() > waveBase) return 'WAVE';
-        return clipCardReady(stem) ? 'LOADED' : null;
+        if (clipCardReady(stem)) return 'LOADED';
+        if (invalidToastAt && Date.now() - invalidToastAt > 60000) return 'FAIL';
+        return null;
       },
       T.LOAD,
       'clip confirmed',
-      (ts) => log('  waiting clip (' + ts + 'ms) wave=' + (waveAggCount() - waveBase) + ' cardReady=' + !!clipCardReady(stem) + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
+      (ts) => log('  waiting clip (' + ts + 'ms) wave=' + (waveAggCount() - waveBase) + ' cardReady=' + !!clipCardReady(stem) + ' toastAge=' + (invalidToastAt ? Math.round((Date.now() - invalidToastAt) / 1000) + 's' : '-') + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
-    if (invalidUpload) {
-      invalidUpload = false;
-      throw new Error('invalid upload (Suno rejected the file)');
+    if (done === 'FAIL') {
+      throw new Error('invalid upload (no positive signal 60s after error toast)');
     }
     await sleep(1000);
-    log('clip confirmed: ' + stem);
+    log('clip confirmed: ' + stem + ' via=' + done);
   }
 
   async function closeOpenPanels() {
