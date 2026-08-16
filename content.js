@@ -364,10 +364,26 @@
 
   let invalidUpload = false;
 
-  async function stepLoaded(prevCount) {
+  function stemOf(name) {
+    return name.replace(/\.[a-z0-9]+$/i, '');
+  }
+
+  function playCardWithName(stem) {
+    for (const p of document.querySelectorAll(SEL_PLAY)) {
+      let cur = p.parentElement;
+      for (let i = 0; i < 4 && cur; i++) {
+        if (textOf(cur).includes(stem)) return p;
+        cur = cur.parentElement;
+      }
+    }
+    return null;
+  }
+
+  async function stepLoaded(name, prevCount) {
     phase = 'waiting';
     notify();
-    log('--- step: wait clip load (play buttons before=' + prevCount + ')');
+    const stem = stemOf(name);
+    log('--- step: wait clip card "' + stem + '" + play button (plays before=' + prevCount + ')');
     await waitFor(
       () => {
         const err = errorTexts().join(' ').toLowerCase();
@@ -378,17 +394,18 @@
           }
           return 'INVALID';
         }
-        return document.querySelectorAll(SEL_PLAY).length > prevCount;
+        if (document.querySelectorAll(SEL_PLAY).length <= prevCount) return null;
+        return playCardWithName(stem) ? 'LOADED' : null;
       },
       T.LOAD,
-      'clip loaded',
-      (ts) => log('  waiting load (' + ts + 'ms) playCount=' + document.querySelectorAll(SEL_PLAY).length + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
+      'clip card loaded',
+      (ts) => log('  waiting load (' + ts + 'ms) playCount=' + document.querySelectorAll(SEL_PLAY).length + ' nameHit=' + !!playCardWithName(stem) + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
     if (invalidUpload) {
       invalidUpload = false;
       throw new Error('invalid upload (Suno rejected the file)');
     }
-    log('clip loaded, playCount=' + document.querySelectorAll(SEL_PLAY).length);
+    log('clip card loaded: ' + stem);
   }
 
   async function closeOpenPanels() {
@@ -428,7 +445,7 @@
         log('play buttons before Continue: ' + prevCount);
         await pickLoopAndContinue();
         await stepOverwriteIfShown();
-        await stepLoaded(prevCount);
+        await stepLoaded(name, prevCount);
         statuses[name] = 'ok';
         log('=== OK: ' + name);
         notify();
