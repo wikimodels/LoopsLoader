@@ -409,11 +409,22 @@
     return null;
   }
 
-  async function stepLoaded(name) {
+  function waveAggCount() {
+    try {
+      return performance
+        .getEntriesByType('resource')
+        .filter((r) => r.name.includes('/waveform-aggregates'))
+        .length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  async function stepLoaded(name, waveBase) {
     phase = 'waiting';
     notify();
     const stem = stemOf(name);
-    log('--- step: wait editor clip card "' + stem + '" (name + play button + waveform, not spinner)');
+    log('--- step: wait clip "' + stem + '" (waveform-aggregates API OR editor card with name + play + canvas)');
     await waitFor(
       () => {
         const errs = errorTexts().join(' ').toLowerCase();
@@ -424,18 +435,19 @@
           }
           return 'INVALID';
         }
+        if (waveAggCount() > waveBase) return 'WAVE';
         return clipCardReady(stem) ? 'LOADED' : null;
       },
       T.LOAD,
-      'clip card ready',
-      (ts) => log('  waiting clip card (' + ts + 'ms) cardReady=' + !!clipCardReady(stem) + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
+      'clip confirmed',
+      (ts) => log('  waiting clip (' + ts + 'ms) wave=' + (waveAggCount() - waveBase) + ' cardReady=' + !!clipCardReady(stem) + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
     if (invalidUpload) {
       invalidUpload = false;
       throw new Error('invalid upload (Suno rejected the file)');
     }
     await sleep(1000);
-    log('clip card ready: ' + stem);
+    log('clip confirmed: ' + stem);
   }
 
   async function closeOpenPanels() {
@@ -472,10 +484,11 @@
           }
         }
         const prevCount = document.querySelectorAll(SEL_PLAY).length;
-        log('play buttons before Continue: ' + prevCount);
+        const waveBase = waveAggCount();
+        log('play buttons before Continue: ' + prevCount + ', waveform-api entries before: ' + waveBase);
         await pickLoopAndContinue();
         await stepOverwriteIfShown(stemOf(name));
-        await stepLoaded(name);
+        await stepLoaded(name, waveBase);
         statuses[name] = 'ok';
         log('=== OK: ' + name);
         notify();
