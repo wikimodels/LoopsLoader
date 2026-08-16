@@ -12,7 +12,7 @@ function New-LLIcon([int]$size, [string]$out) {
   $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
   $g.Clear([System.Drawing.Color]::Transparent)
 
-  $radius = [Math]::Max(6, [int](24 * $scale))
+  $radius = [Math]::Max(3, [int](12 * $scale))
   $d = $radius * 2
   $path = New-Object System.Drawing.Drawing2D.GraphicsPath
   $path.AddArc(0, 0, $d, $d, 180, 90)
@@ -23,37 +23,24 @@ function New-LLIcon([int]$size, [string]$out) {
 
   $bg = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
     (New-Object System.Drawing.Point(0, 0)), (New-Object System.Drawing.Point(0, $size)),
-    [System.Drawing.Color]::FromArgb(255, 122, 92, 255),
-    [System.Drawing.Color]::FromArgb(255, 52, 34, 130))
+    [System.Drawing.Color]::FromArgb(255, 0, 212, 255),
+    [System.Drawing.Color]::FromArgb(255, 47, 86, 222))
   $g.FillPath($bg, $path)
 
-  $penW = [Math]::Max(4, [int](9 * $scale))
-  $pts = New-Object 'System.Collections.Generic.List[System.Drawing.PointF]'
-  $n = 96
-  for ($i = 0; $i -le $n; $i++) {
-    $t = $i / $n
-    $px = 0.12 * $size + 0.76 * $size * $t
-    $phase = 2 * [Math]::PI * 1.6 * $t - 1.0
-    $py = 0.5 * $size + 0.21 * $size * [Math]::Sin($phase)
-    $pts.Add((New-Object System.Drawing.PointF([single]$px, [single]$py)))
-  }
+  $penW = [Math]::Max(5, [int](15 * $scale))
+  $margin = [single](0.16 * $size)
+  $rect = New-Object System.Drawing.RectangleF($margin, $margin, [single]($size - 2 * $margin), [single]($size - 2 * $margin))
 
-  $wave = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-    (New-Object System.Drawing.Point([int](0.1 * $size), 0)), (New-Object System.Drawing.Point([int](0.9 * $size), 0)),
-    [System.Drawing.Color]::FromArgb(255, 150, 255, 215),
-    [System.Drawing.Color]::FromArgb(255, 255, 255, 255))
-  $pen = New-Object System.Drawing.Pen($wave, $penW)
+  $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, $penW)
   $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
   $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-  $pen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
-  $g.DrawLines($pen, $pts.ToArray())
-
-  $dot = [Math]::Max(2, [int](6 * $scale))
-  $dotBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 255, 255, 255))
-  $g.FillEllipse($dotBrush, [single](0.5 * $size - $dot / 2), [single](0.5 * $size - $dot / 2), [single]$dot, [single]$dot)
+  $arrow = New-Object System.Drawing.Drawing2D.AdjustableArrowCap([single](4.5 * $scale + 1), [single](6.0 * $scale + 1), $true)
+  $pen.CustomStartCap = $arrow
+  $pen.CustomEndCap = $arrow
+  $g.DrawArc($pen, $rect, 150, 300)
 
   $bmp.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
-  $pen.Dispose(); $wave.Dispose(); $dotBrush.Dispose(); $bg.Dispose(); $path.Dispose(); $g.Dispose(); $bmp.Dispose()
+  $pen.Dispose(); $bg.Dispose(); $path.Dispose(); $g.Dispose(); $bmp.Dispose()
 }
 
 New-LLIcon 128 (Join-Path $outDir 'icon128.png')

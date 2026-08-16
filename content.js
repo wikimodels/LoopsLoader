@@ -104,6 +104,7 @@
 
   function isVisible(el) {
     try {
+      if (el.getAttribute && el.getAttribute('aria-hidden') === 'true') return false;
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
     } catch (e) {
@@ -113,7 +114,7 @@
 
   function errorTexts() {
     const out = [];
-    const sels = ['[role="alert"]', '[role="status"]', '[class*="Toast"]', '[class*="toast"]', '[class*="error"]', '[class*="Error"]', '[class*="alert"]', '[class*="Alert"]'];
+    const sels = ['[role="alert"]', '[role="status"]', '[role="alertdialog"]', '[data-type="error"]', '[class*="Toast"]', '[class*="toast"]', '[class*="error"]', '[class*="Error"]', '[class*="alert"]', '[class*="Alert"]'];
     for (const sel of sels) {
       for (const el of document.querySelectorAll(sel)) {
         if (!isVisible(el)) continue;
@@ -122,6 +123,25 @@
       }
     }
     return [...new Set(out)].slice(0, 6);
+  }
+
+  function visibleErrorToast() {
+    for (const t of document.querySelectorAll('[data-type="error"]')) {
+      if (t.getAttribute('aria-hidden') === 'true') continue;
+      if (!isVisible(t)) continue;
+      if (/invalid upload/i.test(textOf(t))) return t;
+    }
+    return null;
+  }
+
+  async function dismissErrorToasts() {
+    const t = visibleErrorToast();
+    if (!t) return;
+    log('error toast visible, dismissing');
+    const btn = t.querySelector('button[aria-label="Dismiss"]') || t.querySelector('button');
+    if (btn) dispatchClick(btn);
+    await sleep(500);
+    log('error toast dismissed');
   }
 
   function visibleBtnTexts() {
@@ -497,7 +517,9 @@
         const waveBase = waveAggCount();
         log('play buttons before Continue: ' + prevCount + ', waveform-api entries before: ' + waveBase);
         await pickLoopAndContinue();
+        await dismissErrorToasts();
         await stepOverwriteIfShown(stemOf(name));
+        await dismissErrorToasts();
         await stepLoaded(name, waveBase);
         statuses[name] = 'ok';
         log('=== OK: ' + name);
