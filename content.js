@@ -313,6 +313,7 @@
     let panel = uploadPanel();
     if (!panel) {
       log('upload panel closed, assuming upload completed');
+      await sleep(1000);
       return;
     }
     await sleep(1000);
@@ -335,7 +336,7 @@
     );
     log('Continue enabled, clicking');
     dispatchClick(btnByText(contPanel, 'Continue'));
-    await sleep(400);
+    await sleep(1000);
     log('Continue clicked');
   }
 
@@ -360,6 +361,7 @@
     }
     await clickEl(keep, 'Keep Current');
     log('Keep Current clicked');
+    await sleep(1000);
   }
 
   let invalidUpload = false;
@@ -405,6 +407,7 @@
       invalidUpload = false;
       throw new Error('invalid upload (Suno rejected the file)');
     }
+    await sleep(1000);
     log('clip card loaded: ' + stem);
   }
 
