@@ -1,0 +1,9 @@
+{
+  "name": "com.loopsloader.host",
+  "description": "LoopsLoader native host: starts the local loop file server",
+  "path": "D:\\GitHub\\LoopsLoader\\host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://oeoekhanbeefhdjkjkcfbebdekjfbjfl/"
+  ]
+}

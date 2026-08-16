@@ -43,6 +43,9 @@ body {
 .srv.ok { color: #69db7c; background: rgba(105, 219, 124, .12); }
 .srv.bad { color: #ff6b6b; background: rgba(255, 107, 107, .12); }
 
+.srv.clickable { cursor: pointer; }
+.srv.clickable:hover { background: rgba(255, 255, 255, .15); }
+
 .phase {
   padding: 6px 14px;
   font-size: 12px;

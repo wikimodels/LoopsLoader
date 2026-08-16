@@ -3,7 +3,9 @@
   "name": "Loops Loader for Suno",
   "version": "0.1.0",
   "description": "Uploads loop files from a local folder into Suno one by one",
-  "permissions": ["storage"],
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://*.suno.com/*",
     "http://127.0.0.1/*",
@@ -14,13 +16,18 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.suno.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://*.suno.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Loops Loader"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsqjNVAoOCkE52QdDvLvWQbXgZZ3lpwNE/RagJMWgV1y1dhNs4sTxwb53nXJd/PG6Z6vpYgITVnn30y9SPC8OmMO+v/hdt0W1xbeyCl1kD2Q6wmN//jT9gcSJOozzj10+rO2v+fEjqJki/40gYjJB+4lYOuneFL8pdY2kGWKhw0RILQpg0dDrP42PnpELwQ2OubpVIPsg2D/8b7TEbadxa3pXlkcpwx5VM9upRPSuMWWS6NPyGqcTdETc8MwF2YdolJ/wrgxNjy72lODb8yyixDTYVltsp7zB9noEFagVDejSwo2L3VJfqUQ8mxaVeTKjVR82JqkP9SKvUqP2w91o0wIDAQAB"
 }

@@ -53,22 +53,108 @@ function setSrv(ok, text) {
   els.srv.classList.toggle('bad', ok === false);
 }
 
-async function pingServer() {
-  logline('ping ' + SERVER + '/api/loops ...');
+function nativeStartServer() {
+  return new Promise((resolve) => {
+    try {
+      const port = chrome.runtime.connectNative('com.loopsloader.host');
+      let done = false;
+      const finish = (ok, txt) => {
+        if (done) return;
+        done = true;
+        logline(txt);
+        resolve(ok);
+      };
+      port.onMessage.addListener((m) => finish(!!(m && m.ok), 'native host says: ' + JSON.stringify(m)));
+      port.onDisconnect.addListener(() => {
+        const err = chrome.runtime.lastError;
+        if (!done) logline('native host disconnected: ' + (err ? err.message : 'after response'));
+        resolve(done);
+      });
+      port.postMessage({ type: 'start' });
+      setTimeout(() => finish(false, 'native host timeout'), 5000);
+    } catch (e) {
+      logline('connectNative ERROR: ' + e.message);
+      resolve(false);
+    }
+  });
+}
+
+async function ensureServer() {
+  if ((await pingServer()) && !pingServerResult.error) {
+    return true;
+  }
+  logline('server DOWN -> starting via native host');
+  await nativeStartServer();
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const r = await pingServer();
+    if (r.ok) {
+      logline('server is UP (' + r.n + ' loops)');
+      return true;
+    }
+  }
+  logline('server still DOWN after native start -> run run.bat manually');
+  return false;
+}
+
+async function pingServer(quiet) {
+  if (!quiet) logline('ping ' + SERVER + '/api/loops ...');
   try {
     const r = await fetch(SERVER + '/api/loops', { cache: 'no-store' });
-    logline('server http ' + r.status);
     if (!r.ok) throw new Error('http ' + r.status);
     const j = await r.json();
     loops = (j && j.loops) || [];
     setSrv(true, 'server ' + loops.length);
-    logline('loops on server: ' + loops.length + (loops.length ? ' (first: ' + loops[0].name + ')' : ''));
-    return true;
+    if (!quiet) logline('loops on server: ' + loops.length + (loops.length ? ' (first: ' + loops[0].name + ')' : ''));
+    return { ok: true, n: loops.length };
   } catch (e) {
     setSrv(false, 'no server');
-    logline('server DOWN: ' + (e.message || e) + ' -> run run.bat');
-    return false;
+    if (!quiet) logline('server DOWN: ' + (e.message || e) + ' -> will try to start it');
+    return { ok: false, n: 0 };
   }
+}
+
+function nativeStartServer() {
+  return new Promise((resolve) => {
+    try {
+      const port = chrome.runtime.connectNative('com.loopsloader.host');
+      let done = false;
+      const finish = (ok, txt) => {
+        if (done) return;
+        done = true;
+        logline(txt);
+        resolve(ok);
+      };
+      port.onMessage.addListener((m) => finish(!!(m && m.ok), 'native host says: ' + JSON.stringify(m)));
+      port.onDisconnect.addListener(() => {
+        const err = chrome.runtime.lastError;
+        if (!done) logline('native host disconnected: ' + (err ? err.message : 'after response'));
+        resolve(done);
+      });
+      port.postMessage({ type: 'start' });
+      setTimeout(() => finish(false, 'native host timeout'), 5000);
+    } catch (e) {
+      logline('connectNative ERROR: ' + e.message);
+      resolve(false);
+    }
+  });
+}
+
+async function ensureServer() {
+  const r0 = await pingServer();
+  if (r0.ok) return true;
+  logline('server DOWN -> starting via native host');
+  await nativeStartServer();
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const r = await pingServer(true);
+    if (r.ok) {
+      logline('server is UP (' + r.n + ' loops)');
+      return true;
+    }
+  }
+  logline('server still DOWN after native start -> run run.bat manually');
+  return false;
 }
 
 const IC = { pending: '·', uploading: '▸', ok: '✓', err: '✗', stopped: '◼' };
@@ -131,7 +217,7 @@ els.start.addEventListener('click', async () => {
     logline('ABORT: no suno tab -> open suno.com first');
     return;
   }
-  const ok = await pingServer();
+  const ok = await ensureServer();
   if (!ok) {
     logline('ABORT: no local server -> run run.bat first');
     return;
@@ -156,6 +242,14 @@ els.stop.addEventListener('click', () => {
   if (!tab) return;
   chrome.tabs.sendMessage(tab.id, { type: 'stop' }).catch((e) => logline('stop ERROR: ' + e.message));
 });
+
+els.srv.addEventListener('click', async () => {
+  logline('server chip clicked -> (re)start');
+  await ensureServer();
+  render({}, -1);
+});
+
+els.srv.classList.add('clickable');
 
 els.probe.addEventListener('click', async () => {
   logline('Probe pressed');
@@ -184,7 +278,7 @@ async function run() {
   logline('popup opened (DOM loaded)');
   tab = await findSunoTab();
   if (!tab) els.phase.textContent = 'open suno.com first';
-  await pingServer();
+  await ensureServer();
   await refreshState();
   if (tab) {
     setTimeout(async () => {
