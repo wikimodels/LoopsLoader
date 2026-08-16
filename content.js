@@ -634,12 +634,60 @@
     return false;
   }
 
+  async function clearAudioCondition() {
+    const b = document.querySelector('button[aria-label="Clear audio condition"]');
+    if (!b || !isVisible(b)) {
+      log('no cover block to clear (clean start)');
+      return;
+    }
+    await clickEl(b, 'Clear audio condition');
+    await sleep(1000);
+    log('after clear: block=' + !!coverSourceBlock() + ' dialogs=' + JSON.stringify(dialogTexts()));
+  }
+
+  async function findRowByName(name, timeout) {
+    const t0 = Date.now();
+    let lastLog = 0;
+    let paged = 0;
+    let scDir = 1;
+    while (Date.now() - t0 < timeout) {
+      if (stopped) throw new Error('stopped');
+      const rs = [...document.querySelectorAll('[data-testid="clip-row"]')];
+      const hit = rs.find((r) => rowName(r) === name);
+      if (hit) return hit;
+      const ts = Date.now() - t0;
+      if (ts - lastLog >= 3000) {
+        lastLog = ts;
+        log('  find row (' + ts + 'ms) visible=' + JSON.stringify(rs.map(rowName)) + ' page=' + paged);
+      }
+      const sc = document.querySelector('.clip-browser-list-scroller');
+      if (sc && sc.scrollHeight > sc.clientHeight + 10) {
+        const maxTop = sc.scrollHeight - sc.clientHeight;
+        sc.scrollTop = scDir > 0 ? Math.min(sc.scrollTop + 400, maxTop) : Math.max(sc.scrollTop - 400, 0);
+        if (sc.scrollTop >= maxTop && scDir > 0) scDir = -1;
+        else if (sc.scrollTop <= 0 && scDir < 0) scDir = 1;
+      } else {
+        const next = document.querySelector('button[aria-label="Next page"]');
+        if (next && !next.disabled && paged < 4) {
+          paged++;
+          log('row not on page ' + paged + ', clicking Next page');
+          dispatchClick(next);
+          await sleep(2000);
+          continue;
+        }
+      }
+      await sleep(500);
+    }
+    throw new Error('timeout ' + Math.round(timeout / 1000) + 's: row ' + name + ' not found in list');
+  }
+
   async function coverTrack(row, name) {
     const stem = name;
     log('--- cover: ' + name);
     phase = 'cover-menu';
     notify();
     await dismissPrivacy();
+    await clearAudioCondition();
     pressEscape();
     await sleep(500);
     const moreBtn = row.querySelector('button[aria-label="More options"]');
@@ -746,14 +794,14 @@
     for (const n of loops) statuses[n] = 'pending';
     log('=== START cover walk: ' + total + ' tracks');
     notify();
-    for (let i = 0; i < usable.length; i++) {
+    for (let i = 0; i < loops.length; i++) {
       currentIndex = i;
-      const row = usable[i];
       const name = loops[i];
       statuses[name] = 'uploading';
       log('=== cover ' + (i + 1) + '/' + total + ': ' + name);
       notify();
       try {
+        const row = await findRowByName(name, 20000);
         await coverTrack(row, name);
         statuses[name] = 'ok';
         log('=== OK: ' + name);
