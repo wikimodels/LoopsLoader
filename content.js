@@ -340,7 +340,7 @@
     log('waiting Continue enabled');
     await waitFor(
       () => !isDisabled(btnByText(contPanel, 'Continue')),
-      30000,
+      60000,
       'Continue enabled',
       (ts) => log('  wait Continue (' + ts + 'ms) disabled=' + isDisabled(btnByText(contPanel, 'Continue')))
     );
@@ -350,28 +350,46 @@
     log('Continue clicked');
   }
 
-  async function stepOverwriteIfShown() {
+  async function stepOverwriteIfShown(stem) {
     phase = 'keep';
     notify();
-    log('--- optional: "Overwrite Lyrics & Styles?" -> Keep Current (15s window)');
-    const dialog = await waitFor(
-      overwriteDialog,
-      15000,
-      'Overwrite dialog (optional)',
-      (ts) => log('  wait overwrite dialog (' + ts + 'ms) dialogs=' + JSON.stringify(dialogTexts()))
-    ).catch(() => null);
-    if (!dialog) {
-      log('no overwrite dialog shown - continuing');
-      return;
+    log('--- optional: "Overwrite Lyrics & Styles?" -> Keep Current (25s window, verified clicks)');
+    const t0 = Date.now();
+    while (Date.now() - t0 < 25000) {
+      if (stopped) throw new Error('stopped');
+      const dialog = overwriteDialog();
+      if (dialog) {
+        const keep = btnByText(dialog, 'Keep Current');
+        if (!keep) {
+          log('overwrite dialog without Keep Current button');
+          await sleep(1000);
+          continue;
+        }
+        await clickEl(keep, 'Keep Current');
+        let closed = false;
+        for (let i = 0; i < 8 && !closed; i++) {
+          await sleep(250);
+          if (!overwriteDialog()) closed = true;
+        }
+        if (closed) {
+          log('Keep Current dialog closed');
+          await sleep(500);
+        } else {
+          log('Keep Current dialog still open, clicking again');
+        }
+        continue;
+      }
+      if (clipCardReady(stem)) {
+        log('clip card ready, keep window done');
+        return;
+      }
+      await sleep(250);
     }
-    const keep = btnByText(dialog, 'Keep Current');
-    if (!keep) {
-      log('"Keep Current" button not found in overwrite dialog');
-      return;
+    if (overwriteDialog()) {
+      log('overwrite dialog still open after 25s window');
+      throw new Error('keep dialog stuck open');
     }
-    await clickEl(keep, 'Keep Current');
-    log('Keep Current clicked');
-    await sleep(1000);
+    log('no overwrite dialog shown - continuing');
   }
 
   let invalidUpload = false;
@@ -456,7 +474,7 @@
         const prevCount = document.querySelectorAll(SEL_PLAY).length;
         log('play buttons before Continue: ' + prevCount);
         await pickLoopAndContinue();
-        await stepOverwriteIfShown();
+        await stepOverwriteIfShown(stemOf(name));
         await stepLoaded(name);
         statuses[name] = 'ok';
         log('=== OK: ' + name);
