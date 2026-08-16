@@ -391,10 +391,11 @@
         throw new Error('upload did not start');
       }
     }
+    const prevCount = document.querySelectorAll(SEL_PLAY).length;
+    log('play buttons before Continue: ' + prevCount);
     await pickLoopAndContinue();
     await stepOverwriteIfShown();
-    const prev = document.querySelectorAll(SEL_PLAY).length;
-    await stepLoaded(prev);
+    await stepLoaded(prevCount);
     statuses[name] = 'ok';
     log('=== OK: ' + name);
     notify();
