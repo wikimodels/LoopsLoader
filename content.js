@@ -298,12 +298,22 @@
     return null;
   }
 
+  function resCount(part) {
+    try {
+      return performance.getEntriesByType('resource').filter((r) => r.name.includes(part)).length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
   async function pickLoopAndContinue() {
     phase = 'upload';
     notify();
-    log('waiting for upload to finish (status text -> "Uploaded")');
+    const upBase = resCount('/upload-finish/');
+    log('waiting for upload to finish (server upload-finish OR status text -> "Uploaded")');
     const done = await waitFor(
       () => {
+        if (resCount('/upload-finish/') > upBase) return 'DONE-API';
         const d = uploadPanel();
         if (!d) return 'CLOSED';
         const st = uploadStatusText(d);
@@ -311,12 +321,12 @@
         return null;
       },
       T.FILE_READY,
-      'upload finished (Uploaded)',
+      'upload finished',
       (ts) => {
         const d = uploadPanel();
         const st = d ? uploadStatusText(d) : 'CLOSED';
         const bar = d ? progressPct(d) : null;
-        log('  upload status (' + ts + 'ms): ' + (st || '?') + (bar != null ? ' ' + bar + '%' : '') + ' dialogs=' + JSON.stringify(dialogTexts()));
+        log('  upload status (' + ts + 'ms): ' + (st || '?') + (bar != null ? ' ' + bar + '%' : '') + ' uploadFinish=' + (resCount('/upload-finish/') - upBase) + ' dialogs=' + JSON.stringify(dialogTexts()));
       }
     );
     log('upload finished: ' + done);
@@ -338,11 +348,12 @@
     await sleep(1000);
     const contPanel = uploadPanel() || panel;
     log('waiting Continue enabled');
+    const initBase = resCount('/initialize-clip/');
     await waitFor(
-      () => !isDisabled(btnByText(contPanel, 'Continue')),
+      () => (!isDisabled(btnByText(contPanel, 'Continue')) ? 'READY' : null),
       60000,
       'Continue enabled',
-      (ts) => log('  wait Continue (' + ts + 'ms) disabled=' + isDisabled(btnByText(contPanel, 'Continue')))
+      (ts) => log('  wait Continue (' + ts + 'ms) disabled=' + isDisabled(btnByText(contPanel, 'Continue')) + ' initClip=' + (resCount('/initialize-clip/') - initBase))
     );
     log('Continue enabled, clicking');
     dispatchClick(btnByText(contPanel, 'Continue'));
