@@ -102,6 +102,18 @@
     return [...document.querySelectorAll('[role="dialog"]')].map((d) => textOf(d).slice(0, 120));
   }
 
+  function errorTexts() {
+    const out = [];
+    const sels = ['[role="alert"]', '[role="status"]', '[class*="Toast"]', '[class*="toast"]', '[class*="error"]', '[class*="Error"]', '[class*="alert"]', '[class*="Alert"]'];
+    for (const sel of sels) {
+      for (const el of document.querySelectorAll(sel)) {
+        const t = textOf(el);
+        if (t && t.length < 300 && t.length > 2) out.push(t);
+      }
+    }
+    return [...new Set(out)].slice(0, 6);
+  }
+
   function visibleBtnTexts() {
     return [...document.querySelectorAll('button')]
       .map(textOf)
@@ -327,22 +339,25 @@
     log('Continue clicked');
   }
 
-  async function stepKeepCurrent() {
+  async function stepOverwriteIfShown() {
     phase = 'keep';
     notify();
-    log('--- step: wait "Overwrite Lyrics & Styles?" -> Keep Current');
+    log('--- optional: "Overwrite Lyrics & Styles?" -> Keep Current (15s window)');
     const dialog = await waitFor(
       overwriteDialog,
-      T.KEEP_DIALOG,
-      'Overwrite lyrics dialog',
+      15000,
+      'Overwrite dialog (optional)',
       (ts) => log('  wait overwrite dialog (' + ts + 'ms) dialogs=' + JSON.stringify(dialogTexts()))
     ).catch(() => null);
     if (!dialog) {
-      log('overwrite dialog NOT shown - continuing');
+      log('no overwrite dialog shown - continuing');
       return;
     }
     const keep = btnByText(dialog, 'Keep Current');
-    if (!keep) throw new Error('"Keep Current" button not found');
+    if (!keep) {
+      log('"Keep Current" button not found in overwrite dialog');
+      return;
+    }
     await clickEl(keep, 'Keep Current');
     log('Keep Current clicked');
   }
@@ -355,7 +370,7 @@
       () => document.querySelectorAll(SEL_PLAY).length > prevCount,
       T.LOAD,
       'clip loaded',
-      (ts) => log('  waiting load (' + ts + 'ms) playCount=' + document.querySelectorAll(SEL_PLAY).length + ' dialogs=' + JSON.stringify(dialogTexts()))
+      (ts) => log('  waiting load (' + ts + 'ms) playCount=' + document.querySelectorAll(SEL_PLAY).length + ' errors=' + JSON.stringify(errorTexts()) + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
     log('clip loaded, playCount=' + document.querySelectorAll(SEL_PLAY).length);
   }
@@ -377,7 +392,7 @@
       }
     }
     await pickLoopAndContinue();
-    await stepKeepCurrent();
+    await stepOverwriteIfShown();
     const prev = document.querySelectorAll(SEL_PLAY).length;
     await stepLoaded(prev);
     statuses[name] = 'ok';
