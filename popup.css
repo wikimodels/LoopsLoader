@@ -1,0 +1,112 @@
+body {
+  margin: 0;
+  width: 380px;
+  max-height: 520px;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, #1c2030, #10121c);
+  color: #e8eaf0;
+  font: 13px/1.45 system-ui, sans-serif;
+}
+
+.hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-weight: 700;
+  color: #ffd43b;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+
+.srv {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+  color: #9aa0b0;
+}
+
+.srv.ok { color: #69db7c; background: rgba(105, 219, 124, .12); }
+.srv.bad { color: #ff6b6b; background: rgba(255, 107, 107, .12); }
+
+.phase {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #9aa0b0;
+  border-bottom: 1px solid rgba(255, 255, 255, .05);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wrap {
+  overflow-y: auto;
+  max-height: 260px;
+}
+
+.list {
+  padding: 6px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.item.cur { background: rgba(255, 212, 59, .08); }
+.item.ok { color: #69db7c; }
+.item.err { color: #ff6b6b; }
+
+.item .ic { flex: none; width: 16px; text-align: center; color: #6f7689; }
+.item.cur .ic { color: #ffd43b; }
+.item.ok .ic { color: #69db7c; }
+.item.err .ic { color: #ff6b6b; }
+
+.item .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item .sz { flex: none; color: #6f7689; font-size: 11px; }
+
+.log {
+  margin: 6px 10px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, .25);
+  border-radius: 10px;
+  font: 11px/1.5 ui-monospace, Consolas, monospace;
+  color: #8b90a0;
+  max-height: 130px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.foot {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+}
+
+.btn {
+  flex: 1;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 0;
+  font: 600 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.btn:disabled { opacity: .4; cursor: default; }
+
+.btn.primary { background: linear-gradient(90deg, #ffd43b, #ff922b); color: #10121c; }
+.btn.danger { background: rgba(255, 107, 107, .15); color: #ff6b6b; border: 1px solid rgba(255, 107, 107, .4); }

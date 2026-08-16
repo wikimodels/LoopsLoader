@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Loops Loader for Suno",
+  "version": "0.1.0",
+  "description": "Uploads loop files from a local folder into Suno one by one",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://*.suno.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.suno.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Loops Loader"
+  }
+}
