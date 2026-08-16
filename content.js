@@ -127,8 +127,13 @@
 
   function visibleErrorToast() {
     for (const t of document.querySelectorAll('[data-type="error"]')) {
-      if (t.getAttribute('aria-hidden') === 'true') continue;
-      if (!isVisible(t)) continue;
+      try {
+        const r = t.getBoundingClientRect();
+        const onScreen = r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth;
+        if (!onScreen) continue;
+      } catch (e) {
+        continue;
+      }
       if (/invalid upload/i.test(textOf(t))) return t;
     }
     return null;
@@ -498,6 +503,7 @@
     notify();
     log('--- step 1: get file from server');
     const file = await fetchLoopFile(name);
+    await dismissErrorToasts();
     let lastErr = '';
     for (let attempt = 1; attempt <= 3; attempt++) {
       log('=== attempt ' + attempt + '/3 for ' + name);
