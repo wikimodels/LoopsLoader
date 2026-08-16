@@ -85,9 +85,10 @@ body {
   border-radius: 10px;
   font: 11px/1.5 ui-monospace, Consolas, monospace;
   color: #8b90a0;
-  max-height: 130px;
+  max-height: 150px;
   overflow-y: auto;
   white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .foot {
@@ -110,3 +111,4 @@ body {
 
 .btn.primary { background: linear-gradient(90deg, #ffd43b, #ff922b); color: #10121c; }
 .btn.danger { background: rgba(255, 107, 107, .15); color: #ff6b6b; border: 1px solid rgba(255, 107, 107, .4); }
+.btn.ghost { flex: none; width: auto; padding: 9px 12px; background: rgba(255, 255, 255, .08); color: #9aa0b0; }
