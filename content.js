@@ -546,7 +546,7 @@
 
   function createReady() {
     const b = createBtn();
-    return b && !isDisabled(b) && isVisible(b) ? b : null;
+    return b && !b.disabled && isVisible(b) ? b : null;
   }
 
   function coverSourceBlock() {
@@ -803,7 +803,10 @@
         log('  wait Create (' + ts + 'ms) found=' + !!b + ' disabledAttr=' + (b ? !!b.hasAttribute('data-trigger-disabled') : '-') + ' ariaDisabled=' + (b ? b.getAttribute('aria-disabled') : '-') + ' disabledProp=' + (b ? b.disabled : '-'));
       }
     );
-    await clickEl(create, 'Create song');
+    log('clicking: Create song (native click)');
+    await safe(() => create.scrollIntoView({ block: 'center', inline: 'center' }));
+    create.click();
+    await sleep(800);
     phase = 'cover-spin';
     notify();
     const base = spinCount();
