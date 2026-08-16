@@ -679,7 +679,7 @@
       'cover panel opening (block or Keep Current)',
       (ts) => log('  wait open (' + ts + 'ms) block=' + !!coverSourceBlock() + ' dialogs=' + JSON.stringify(dialogTexts()))
     );
-    await clickKeepCurrent(60000);
+    await clickKeepCurrent(5000);
     phase = 'cover-wait';
     notify();
     const waveBase = waveAggCount();
