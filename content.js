@@ -681,6 +681,50 @@
     throw new Error('timeout ' + Math.round(timeout / 1000) + 's: row ' + name + ' not found in list');
   }
 
+  function moreOptionsToggle() {
+    return [...document.querySelectorAll('div[role="button"]')].find((el) => isVisible(el) && textOf(el).includes('More Options')) || null;
+  }
+
+  async function ensureMoreOptionsOpen() {
+    const toggle = moreOptionsToggle();
+    if (!toggle) {
+      log('More Options toggle not found');
+      return false;
+    }
+    const open = toggle.getAttribute('aria-expanded') === 'true';
+    log('More Options tab: ' + (open ? 'open' : 'closed'));
+    if (!open) {
+      await clickEl(toggle, 'More Options toggle');
+      await sleep(1200);
+      const t2 = moreOptionsToggle();
+      log('More Options after click: ' + (t2 ? t2.getAttribute('aria-expanded') : 'gone'));
+    }
+    return !!moreOptionsToggle();
+  }
+
+  function titleInput() {
+    return document.querySelector('input[placeholder="Song Title (Optional)"]') || null;
+  }
+
+  async function setTrackTitle(name) {
+    const input = titleInput();
+    if (!input) {
+      log('title input not found (More Options collapsed?)');
+      return false;
+    }
+    if (input.value === name) {
+      log('title already set: ' + name);
+      return true;
+    }
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, name);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    log('title set to: ' + name);
+    await sleep(500);
+    return true;
+  }
+
   async function coverTrack(row, name) {
     const stem = name;
     log('--- cover: ' + name);
@@ -746,6 +790,8 @@
     );
     await sleep(3000);
     log('cover clip confirmed: ' + stem + ' via=' + done);
+    await ensureMoreOptionsOpen();
+    await setTrackTitle(stem);
     phase = 'cover-create';
     notify();
     const create = await waitFor(
