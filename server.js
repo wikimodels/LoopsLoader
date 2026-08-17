@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 8977;
-const LOOPS_DIR = process.env.LOOPS_DIR || 'C:\\Users\\Vitali\\Downloads\\Loops';
+const LOOPS_DIR = process.env.LOOPS_DIR || 'C:\\Users\\Vitali\\Downloads\\AIMusicTools\\Loops';
 
 const AUDIO_EXT = new Set(['.mp3', '.wav', '.flac', '.ogg', '.opus', '.webm', '.m4a', '.aac', '.aiff']);
 
