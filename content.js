@@ -685,6 +685,128 @@
     return [...document.querySelectorAll('div[role="button"]')].find((el) => isVisible(el) && textOf(el).includes('More Options')) || null;
   }
 
+  // ─── Prompt fields (styles / lyrics / negative) ──────────────────────────────
+
+  function findLyricsField() {
+    const lexical = document.querySelector('div[data-lexical-editor="true"]');
+    if (lexical) return lexical;
+    const byTestId = document.querySelector('textarea[data-testid="lyrics-textarea"]');
+    if (byTestId) return byTestId;
+    return [...document.querySelectorAll('textarea')].find((el) => /lyrics|instrumental/i.test(el.placeholder)) || null;
+  }
+
+  function findStylesField() {
+    const byMaxLength = document.querySelector('textarea[maxlength="1000"]');
+    if (byMaxLength) return byMaxLength;
+    return [...document.querySelectorAll('textarea, input')].find((el) =>
+      /style of music/i.test(el.placeholder || '') || /^style/i.test(el.placeholder || '')
+    ) || null;
+  }
+
+  function findNegativeField() {
+    return [...document.querySelectorAll('input')].find((el) => /exclude styles/i.test(el.placeholder)) || null;
+  }
+
+  /** React-safe value setter for input/textarea (native prototype setter). */
+  function reactSet(el, value) {
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  /**
+   * Вставка текста в Lexical Editor (contenteditable div).
+   * Lexical игнорирует прямой DOM — работаем через его нативные обработчики:
+   * Ctrl+A (KeyboardEvent) → внутренний $selectAll → insertText/paste.
+   * @returns {Promise<boolean>} true если контент совпал после вставки
+   */
+  async function setLexicalValue(el, value) {
+    const norm = (t) => (t || '').trim().replace(/\s+/g, '').slice(0, 60);
+    const target = norm(value);
+    el.focus();
+    await sleep(80);
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', ctrlKey: true, bubbles: true, cancelable: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', code: 'KeyA', ctrlKey: true, bubbles: true }));
+      await sleep(attempt === 0 ? 80 : 50);
+
+      if (attempt === 1) {
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true, cancelable: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', code: 'Backspace', bubbles: true }));
+        await sleep(150);
+      }
+
+      let ok = false;
+      try { ok = document.execCommand('insertText', false, value || ''); } catch (_) {}
+      await sleep(250);
+      if (ok && norm(el.innerText) === target) return true;
+
+      if (attempt === 2) {
+        try {
+          const dt = new DataTransfer();
+          dt.setData('text/plain', value || '');
+          dt.setData('text/html', (value || '').split('\n').map((l) => '<p>' + (l || '<br>') + '</p>').join(''));
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', ctrlKey: true, bubbles: true, cancelable: true }));
+          await sleep(80);
+          el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+          await sleep(300);
+          return norm(el.innerText) === target;
+        } catch (_) {
+          return false;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Читает промпт с полей страницы create (после ensureMoreOptionsOpen). */
+  async function extractPromptFromPage() {
+    await ensureMoreOptionsOpen();
+    const read = (el) => (el ? ((el.contentEditable === 'true' ? el.innerText : el.value) || '').trim() : '');
+    return {
+      songTitle: '',
+      styles: read(findStylesField()),
+      negativePrompt: read(findNegativeField()),
+      lyrics: read(findLyricsField())
+    };
+  }
+
+  /** Вставляет сохранённый промпт в поля страницы (styles + lyrics + neg). */
+  async function applyPromptToFields(prompt) {
+    log('--- step: insert prompt (styles/lyrics' + (prompt.negativePrompt ? '/negative' : '') + ')');
+    const s = findStylesField();
+    if (s) {
+      reactSet(s, prompt.styles || '');
+      log('styles set: ' + (prompt.styles || '').length + ' chars');
+      await sleep(500);
+    } else {
+      log('styles field NOT found');
+    }
+    const l = findLyricsField();
+    if (l) {
+      if (l.contentEditable === 'true') {
+        const okL = await setLexicalValue(l, prompt.lyrics || '');
+        log('lyrics (Lexical): ' + (okL ? 'verified ok' : 'inserted, VERIFY MANUALLY'));
+      } else {
+        reactSet(l, prompt.lyrics || '');
+        log('lyrics set (plain textarea)');
+      }
+      await sleep(500);
+    } else {
+      log('lyrics field NOT found');
+    }
+    if (prompt.negativePrompt) {
+      const n = findNegativeField();
+      if (n) {
+        reactSet(n, prompt.negativePrompt);
+        log('negative set: ' + prompt.negativePrompt.length + ' chars');
+        await sleep(300);
+      }
+    }
+  }
+
   async function ensureMoreOptionsOpen() {
     const toggle = moreOptionsToggle();
     if (!toggle) {
@@ -791,6 +913,9 @@
     await sleep(3000);
     log('cover clip confirmed: ' + stem + ' via=' + done);
     await ensureMoreOptionsOpen();
+    if (pendingPrompt && (pendingPrompt.styles || pendingPrompt.lyrics)) {
+      await applyPromptToFields(pendingPrompt);
+    }
     await setTrackTitle(stem);
     phase = 'cover-create';
     notify();
@@ -873,8 +998,18 @@
     phase = stopped ? 'stopped' : 'done';
   }
 
-  async function startCover() {
+  let pendingPrompt = null; // {styles, lyrics, negativePrompt} для каверов
+
+  async function startCover(prompt) {
     if (running) return { ok: false, error: 'already running' };
+    pendingPrompt = prompt || null;
+    if (pendingPrompt) {
+      log('prompt attached: styles=' + (pendingPrompt.styles || '').length +
+        ' lyrics=' + (pendingPrompt.lyrics || '').length +
+        ' neg=' + (pendingPrompt.negativePrompt || '').length);
+    } else {
+      log('no prompt attached — title-only mode');
+    }
     running = true;
     stopped = false;
     currentIndex = -1;
@@ -1028,8 +1163,14 @@
       return true;
     }
     if (msg.type === 'start-cover') {
-      startCover()
+      startCover(msg.prompt || null)
         .then((r) => sendResponse(r))
+        .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
+      return true;
+    }
+    if (msg.type === 'extract-prompt') {
+      extractPromptFromPage()
+        .then((p) => sendResponse({ ok: true, prompt: p }))
         .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
       return true;
     }

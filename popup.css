@@ -9,6 +9,21 @@ body {
   font: 13px/1.45 system-ui, sans-serif;
 }
 
+/* ── Dark scrollbars ─────────────────────────────────────── */
+* {
+  scrollbar-color: #2a3046 #0b0d14;
+  scrollbar-width: thin;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0b0d14; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #343b58, #262c42);
+  border-radius: 6px;
+  border: 2px solid #0b0d14;
+}
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #454e75, #303754); }
+::-webkit-scrollbar-corner { background: #0b0d14; }
+
 .errbanner {
   margin: 8px 10px 0;
   padding: 8px 10px;
@@ -153,3 +168,41 @@ body {
 .btn.primary { background: linear-gradient(90deg, #ffd43b, #ff922b); color: #10121c; }
 .btn.danger { background: rgba(255, 107, 107, .15); color: #ff6b6b; border: 1px solid rgba(255, 107, 107, .4); }
 .btn.ghost { flex: none; width: auto; padding: 9px 12px; background: rgba(255, 255, 255, .08); color: #9aa0b0; }
+
+.srvbtn {
+  margin: 0;
+  padding: 9px 0;
+  background: rgba(105, 219, 124, .12);
+  border: 1px solid rgba(105, 219, 124, .35);
+  color: #69db7c;
+  font-size: 11px;
+}
+.srvbtn:hover { background: rgba(105, 219, 124, .2); border-color: rgba(105, 219, 124, .55); }
+
+.extbtn {
+  margin: 0;
+  padding: 9px 0;
+  background: rgba(250, 204, 21, .1);
+  border: 1px solid rgba(250, 204, 21, .35);
+  color: #facc15;
+  font-size: 11px;
+}
+.extbtn:hover { background: rgba(250, 204, 21, .18); border-color: rgba(250, 204, 21, .55); }
+
+.hidden { display: none !important; }
+
+.prompt-line {
+  margin: 0 14px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .25);
+  font: 10.5px/1.4 ui-monospace, Consolas, monospace;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.prompt-line.ok { color: #69db7c; }
+.prompt-line.bad { color: #ff6b6b; }

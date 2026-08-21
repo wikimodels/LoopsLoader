@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "description": "Uploads loop files from a local folder into Suno one by one",
   "permissions": [
-    "storage"
+    "storage",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "https://*.suno.com/*",

@@ -17,24 +17,63 @@ window.addEventListener('unhandledrejection', (e) => showError('promise: ' + (e.
 const els = {
   srv: document.getElementById('srv'),
   phase: document.getElementById('phase'),
+  promptLine: document.getElementById('promptLine'),
   list: document.getElementById('list'),
   log: document.getElementById('log'),
   start: document.getElementById('start'),
   stop: document.getElementById('stop'),
   probe: document.getElementById('probe'),
+  srvstart: document.getElementById('srvstart'),
+  extractPrompt: document.getElementById('extractPrompt'),
   modes: document.getElementById('modes')
 };
 
 let tab = null;
 let loops = [];
 let mode = 'loops';
+let coverPrompt = null; // {styles, lyrics, negativePrompt}
+
+// ─── Cover prompt (extract from page fields) ────────────────────────────────
+
+async function loadCoverPrompt() {
+  try {
+    const d = await chrome.storage.session.get('coverPrompt');
+    coverPrompt = d.coverPrompt || null;
+  } catch (_) {
+    coverPrompt = null;
+  }
+}
+
+function renderPromptLine() {
+  if (mode !== 'cover') {
+    els.promptLine.classList.add('hidden');
+    return;
+  }
+  els.promptLine.classList.remove('hidden');
+  if (!coverPrompt) {
+    els.promptLine.textContent = 'prompt: ✗ not extracted — press ✂ Extract';
+    els.promptLine.className = 'prompt-line bad';
+    els.promptLine.title = '';
+    return;
+  }
+  const s = (coverPrompt.styles || '').length;
+  const l = (coverPrompt.lyrics || '').length;
+  const n = (coverPrompt.negativePrompt || '').length;
+  els.promptLine.textContent = 'prompt ✓ · styles ' + s + ' ch · lyrics ' + l + ' ch' + (n ? ' · neg ' + n + ' ch' : '');
+  els.promptLine.className = 'prompt-line ok';
+  els.promptLine.title = JSON.stringify(coverPrompt, null, 2);
+}
 
 function setMode(m) {
   mode = m;
   for (const b of els.modes.querySelectorAll('.mode')) {
     b.classList.toggle('active', b.dataset.mode === m);
   }
-  els.start.textContent = m === 'cover' ? 'Start covers' : 'Start';
+  els.start.textContent = m === 'cover' ? 'Start Covers' : 'Start Process';
+  // Каверы работают чисто со страницей — сервер не нужен
+  els.srvstart.classList.toggle('hidden', m === 'cover');
+  els.extractPrompt.classList.toggle('hidden', m !== 'cover');
+  renderPromptLine();
 }
 
 function logline(...a) {
@@ -63,50 +102,6 @@ function setSrv(ok, text) {
   els.srv.classList.toggle('bad', ok === false);
 }
 
-function nativeStartServer() {
-  return new Promise((resolve) => {
-    try {
-      const port = chrome.runtime.connectNative('com.loopsloader.host');
-      let done = false;
-      const finish = (ok, txt) => {
-        if (done) return;
-        done = true;
-        logline(txt);
-        resolve(ok);
-      };
-      port.onMessage.addListener((m) => finish(!!(m && m.ok), 'native host says: ' + JSON.stringify(m)));
-      port.onDisconnect.addListener(() => {
-        const err = chrome.runtime.lastError;
-        if (!done) logline('native host disconnected: ' + (err ? err.message : 'after response'));
-        resolve(done);
-      });
-      port.postMessage({ type: 'start' });
-      setTimeout(() => finish(false, 'native host timeout'), 5000);
-    } catch (e) {
-      logline('connectNative ERROR: ' + e.message);
-      resolve(false);
-    }
-  });
-}
-
-async function ensureServer() {
-  if ((await pingServer()) && !pingServerResult.error) {
-    return true;
-  }
-  logline('server DOWN -> starting via native host');
-  await nativeStartServer();
-  for (let i = 0; i < 12; i++) {
-    await new Promise((r) => setTimeout(r, 500));
-    const r = await pingServer();
-    if (r.ok) {
-      logline('server is UP (' + r.n + ' loops)');
-      return true;
-    }
-  }
-  logline('server still DOWN after native start -> run run.bat manually');
-  return false;
-}
-
 async function pingServer(quiet) {
   if (!quiet) logline('ping ' + SERVER + '/api/loops ...');
   try {
@@ -124,46 +119,104 @@ async function pingServer(quiet) {
   }
 }
 
-function nativeStartServer() {
+function nmCall(msg) {
+  // Одноразовый вызов native host прямо из попапа.
   return new Promise((resolve) => {
     try {
-      const port = chrome.runtime.connectNative('com.loopsloader.host');
-      let done = false;
-      const finish = (ok, txt) => {
-        if (done) return;
-        done = true;
-        logline(txt);
-        resolve(ok);
-      };
-      port.onMessage.addListener((m) => finish(!!(m && m.ok), 'native host says: ' + JSON.stringify(m)));
-      port.onDisconnect.addListener(() => {
+      if (typeof chrome.runtime.sendNativeMessage !== 'function') {
+        resolve({ unavailable: true });
+        return;
+      }
+      chrome.runtime.sendNativeMessage('com.loopsloader.host', msg, (resp) => {
         const err = chrome.runtime.lastError;
-        if (!done) logline('native host disconnected: ' + (err ? err.message : 'after response'));
-        resolve(done);
+        if (err) resolve({ ok: false, error: err.message });
+        else resolve(resp || {});
       });
-      port.postMessage({ type: 'start' });
-      setTimeout(() => finish(false, 'native host timeout'), 5000);
     } catch (e) {
-      logline('connectNative ERROR: ' + e.message);
-      resolve(false);
+      resolve({ ok: false, error: e.message });
     }
   });
+}
+
+async function cleanupStrays() {
+  const r = await nmCall({ type: 'cleanup' });
+  if (r.unavailable) {
+    logline('cleanup skipped: native messaging unavailable in popup');
+    return false;
+  }
+  if (!r.ok) {
+    logline('cleanup error: ' + (r.error || JSON.stringify(r)));
+    return false;
+  }
+  const killed = r.killed || [];
+  logline(killed.length ? 'cleanup: killed stray process(es) pid=' + killed.join(',') : 'cleanup: no stray processes');
+  await new Promise((res) => setTimeout(res, 400));
+  return true;
+}
+
+async function nativeStartServer() {
+  const r = await nmCall({ type: 'start' });
+  if (r.unavailable) {
+    logline('sendNativeMessage unavailable -> fallback via background');
+    try {
+      chrome.runtime.sendMessage({ type: 'start-server' }, () => {
+        const err = chrome.runtime.lastError;
+        if (err) logline('bg message note: ' + err.message);
+      });
+    } catch (e) {
+      logline('bg sendMessage ERROR: ' + e.message);
+    }
+    return true; // продолжаем опрос — фон запускает асинхронно
+  }
+  if (!r.ok) {
+    logline('native (direct) error: ' + (r.error || JSON.stringify(r)));
+    return false;
+  }
+  logline('native host says: ' + JSON.stringify(r));
+  return true;
+}
+
+async function readStartDiag() {
+  try {
+    const d = await chrome.storage.session.get('serverStartDiag');
+    return d.serverStartDiag || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 async function ensureServer() {
   const r0 = await pingServer();
   if (r0.ok) return true;
-  logline('server DOWN -> starting via native host');
+  logline('server DOWN -> cleanup + start via native host');
+  await cleanupStrays();
   await nativeStartServer();
-  for (let i = 0; i < 12; i++) {
+  let diagShown = false;
+  for (let i = 0; i < 14; i++) {
     await new Promise((r) => setTimeout(r, 500));
     const r = await pingServer(true);
     if (r.ok) {
       logline('server is UP (' + r.n + ' loops)');
       return true;
     }
+    const diag = await readStartDiag();
+    if (diag && !diag.ok && !diagShown) {
+      diagShown = true;
+      logline('native host error: ' + (diag.error || JSON.stringify(diag.reply || {})));
+    }
   }
-  logline('server still DOWN after native start -> run run.bat manually');
+  if (!diagShown) {
+    const diag = await readStartDiag();
+    logline('diag: ' + JSON.stringify(diag));
+    if (diag && !diag.ok) {
+      logline('native host error: ' + (diag.error || JSON.stringify(diag.reply || {})));
+      diagShown = true;
+    }
+  }
+  if (!diagShown) {
+    logline('background SW did not report (old worker cached? reload extension fully)');
+  }
+  logline('server still DOWN after native start -> run run.bat or install_autostart.bat');
   return false;
 }
 
@@ -249,6 +302,37 @@ els.modes.addEventListener('click', async (e) => {
   render({}, -1);
 });
 
+els.extractPrompt.addEventListener('click', async () => {
+  logline('Extract Prompt pressed');
+  const t = await findSunoTab();
+  if (!t) {
+    logline('no suno tab -> open suno.com first');
+    return;
+  }
+  try {
+    const r = await chrome.tabs.sendMessage(t.id, { type: 'extract-prompt' });
+    if (!r || !r.ok) {
+      logline('extract ERROR: ' + (r && r.error ? r.error : 'no response'));
+      return;
+    }
+    const p = r.prompt || {};
+    if (!p.styles && !p.lyrics) {
+      logline('extract: fields empty — fill Styles/Lyrics on page first');
+      coverPrompt = null;
+      await chrome.storage.session.remove('coverPrompt').catch(() => {});
+      renderPromptLine();
+      return;
+    }
+    delete p.songTitle; // title всегда = имя ковера
+    coverPrompt = p;
+    await chrome.storage.session.set({ coverPrompt: p }).catch(() => {});
+    logline('prompt extracted ✓ styles=' + (p.styles || '').length + ' lyrics=' + (p.lyrics || '').length);
+    renderPromptLine();
+  } catch (e) {
+    logline('extract sendMessage ERROR: ' + e.message + ' (reload suno tab)');
+  }
+});
+
 els.start.addEventListener('click', async () => {
   logline('Start pressed (' + mode + ')');
   tab = await findSunoTab();
@@ -257,8 +341,13 @@ els.start.addEventListener('click', async () => {
     return;
   }
   if (mode === 'cover') {
+    const p = coverPrompt || {};
+    if (!p.styles && !p.lyrics) {
+      logline('ABORT: no prompt — press "✂ Extract" first (fields on page)');
+      return;
+    }
     try {
-      const r = await chrome.tabs.sendMessage(tab.id, { type: 'start-cover' });
+      const r = await chrome.tabs.sendMessage(tab.id, { type: 'start-cover', prompt: p });
       logline('cover start response: ' + JSON.stringify(r));
       if (r && r.error) logline('cover start error: ' + r.error);
     } catch (e) {
@@ -299,6 +388,21 @@ els.srv.addEventListener('click', async () => {
   render({}, -1);
 });
 
+els.srvstart.addEventListener('click', async () => {
+  logline('=== Start Server pressed ===');
+  els.srvstart.disabled = true;
+  els.srvstart.textContent = '… Starting';
+  const ok = await ensureServer();
+  if (ok) {
+    render({}, -1);
+    logline('✅ server ready (' + loops.length + ' loops)');
+  } else {
+    logline('❌ could not start server — see errors above');
+  }
+  els.srvstart.disabled = false;
+  els.srvstart.textContent = '▶ Start Server';
+});
+
 els.srv.classList.add('clickable');
 
 els.probe.addEventListener('click', async () => {
@@ -328,6 +432,15 @@ async function run() {
   logline('popup opened (DOM loaded)');
   tab = await findSunoTab();
   if (!tab) els.phase.textContent = 'open suno.com first';
+  await loadCoverPrompt();
+  renderPromptLine();
+  // Проверка живости фонового воркера
+  try {
+    chrome.runtime.sendMessage({ type: 'get-start-diag' }, (r) => {
+      const e = chrome.runtime.lastError;
+      logline(e ? 'bg check FAIL: ' + e.message : 'bg alive, lastDiag=' + JSON.stringify(r));
+    });
+  } catch (_) {}
   await ensureServer();
   await refreshState();
   if (tab) {
