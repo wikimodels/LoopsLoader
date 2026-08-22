@@ -22,10 +22,12 @@ const els = {
   log: document.getElementById('log'),
   start: document.getElementById('start'),
   stop: document.getElementById('stop'),
-  probe: document.getElementById('probe'),
   srvstart: document.getElementById('srvstart'),
   extractPrompt: document.getElementById('extractPrompt'),
-  modes: document.getElementById('modes')
+  viewPrompt: document.getElementById('viewPrompt'),
+  modes: document.getElementById('modes'),
+  modal: document.getElementById('promptModal'),
+  closeBtn: document.getElementById('closeBtn')
 };
 
 let tab = null;
@@ -44,24 +46,71 @@ async function loadCoverPrompt() {
   }
 }
 
+/* Проверка формата промпта:
+   styles — непустая строка (обязательно),
+   lyrics — непустая строка,
+   negativePrompt — строка (может быть пустой). */
+function validatePrompt(p) {
+  const issues = [];
+  if (!p) return { ok: false, issues: ['prompt is not extracted'] };
+  if (typeof p.styles !== 'string' || !p.styles.trim()) issues.push('styles is empty');
+  else if (typeof p.lyrics !== 'string' || !p.lyrics.trim()) issues.push('lyrics is empty');
+  else if (typeof p.negativePrompt !== 'string') issues.push('negativePrompt is missing');
+  return { ok: issues.length === 0, issues };
+}
+
 function renderPromptLine() {
   if (mode !== 'cover') {
     els.promptLine.classList.add('hidden');
+    els.viewPrompt.classList.add('hidden');
     return;
   }
   els.promptLine.classList.remove('hidden');
+  els.viewPrompt.classList.toggle('hidden', !coverPrompt);
   if (!coverPrompt) {
-    els.promptLine.textContent = 'prompt: ✗ not extracted — press ✂ Extract';
+    els.promptLine.textContent = '✗ prompt not extracted — press ✂ Get Prompt';
     els.promptLine.className = 'prompt-line bad';
     els.promptLine.title = '';
     return;
   }
+  const v = validatePrompt(coverPrompt);
   const s = (coverPrompt.styles || '').length;
   const l = (coverPrompt.lyrics || '').length;
   const n = (coverPrompt.negativePrompt || '').length;
-  els.promptLine.textContent = 'prompt ✓ · styles ' + s + ' ch · lyrics ' + l + ' ch' + (n ? ' · neg ' + n + ' ch' : '');
-  els.promptLine.className = 'prompt-line ok';
-  els.promptLine.title = JSON.stringify(coverPrompt, null, 2);
+  if (v.ok) {
+    els.promptLine.textContent = '✓ prompt valid · styles ' + s + ' ch · lyrics ' + l + ' ch' + (n ? ' · neg ' + n + ' ch' : '');
+    els.promptLine.className = 'prompt-line ok viewable';
+    els.promptLine.title = 'Click to view the prompt';
+  } else {
+    els.promptLine.textContent = '✗ prompt invalid — ' + v.issues.join('; ');
+    els.promptLine.className = 'prompt-line bad viewable';
+    els.promptLine.title = 'Click to view details';
+  }
+}
+
+/* ── Prompt viewer modal ─────────────────────────────────── */
+
+function openPromptModal() {
+  if (!coverPrompt) return;
+  const v = validatePrompt(coverPrompt);
+
+  const badge = document.getElementById('pmBadge');
+  badge.textContent = v.ok ? '✓ VALID' : '✗ INVALID';
+  badge.className = 'pm-badge ' + (v.ok ? 'ok' : 'bad');
+
+  const doc = JSON.stringify(coverPrompt, null, 2)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const body = document.getElementById('pmBody');
+  body.innerHTML =
+    (v.ok ? '' : '<div class="pm-issues">Format problems:\n• ' + v.issues.join('\n• ') + '</div>')
+    + '<pre class="pm-pre modal-doc">' + doc + '</pre>';
+
+  els.modal.classList.remove('hidden');
+}
+
+function closePromptModal() {
+  els.modal.classList.add('hidden');
 }
 
 function setMode(m) {
@@ -75,6 +124,38 @@ function setMode(m) {
   els.extractPrompt.classList.toggle('hidden', m !== 'cover');
   renderPromptLine();
 }
+
+/* ── Stale prompt: Suno чистит свои поля при перезагрузке ─────────────────── */
+
+/* Сверка сохранённого промпта с живыми полями страницы.
+   Если поля пустые — промпт протух: стираем и обновляем статус. */
+async function verifyPromptAgainstPage(reason) {
+  if (!coverPrompt) return;
+  const t = await findSunoTab();
+  if (!t) return;
+  try {
+    const r = await chrome.tabs.sendMessage(t.id, { type: 'extract-prompt' });
+    const p = (r && r.prompt) || {};
+    if (!p.styles && !p.lyrics) {
+      logline((reason || 'verify') + ': page fields EMPTY — stored prompt STALE, cleared ✓');
+      coverPrompt = null;
+      await chrome.storage.session.remove('coverPrompt').catch(() => {});
+      renderPromptLine();
+    }
+  } catch (_) { /* content script ещё не внедрён — пропускаем */ }
+}
+
+/* Перезагрузка вкладки Suno, пока попап открыт → мгновенно чистим промпт */
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, ti) => {
+  const u = changeInfo.url || ti.url || '';
+  if (!/^https:\/\/.*suno\.com\//.test(u)) return;
+  if (changeInfo.status !== 'loading' && !changeInfo.url) return;
+  if (!coverPrompt) return;
+  logline('suno page RELOADED — clearing stale prompt');
+  coverPrompt = null;
+  try { await chrome.storage.session.remove('coverPrompt'); } catch (_) {}
+  renderPromptLine();
+});
 
 function logline(...a) {
   const line = new Date().toLocaleTimeString('ru-RU') + ' [popup] ' + a.map((x) => (typeof x === 'string' ? x : x && x.message ? x.message : JSON.stringify(x))).join(' ');
@@ -296,6 +377,7 @@ els.modes.addEventListener('click', async (e) => {
     } catch (e) {
       logline('cover probe ERROR: ' + e.message + ' (reload suno tab, re-open popup)');
     }
+    await verifyPromptAgainstPage('mode cover'); // свежесть промпта после F5
     return;
   }
   await ensureServer();
@@ -303,7 +385,7 @@ els.modes.addEventListener('click', async (e) => {
 });
 
 els.extractPrompt.addEventListener('click', async () => {
-  logline('Extract Prompt pressed');
+  logline('Get Prompt pressed');
   const t = await findSunoTab();
   if (!t) {
     logline('no suno tab -> open suno.com first');
@@ -317,7 +399,9 @@ els.extractPrompt.addEventListener('click', async () => {
     }
     const p = r.prompt || {};
     if (!p.styles && !p.lyrics) {
-      logline('extract: fields empty — fill Styles/Lyrics on page first');
+      // Поля Suno пустые (напр. после перезагрузки страницы) —
+      // сохранённый промпт протух: стираем и обновляем статус.
+      logline('extract: page fields EMPTY — stale prompt cleared ✓');
       coverPrompt = null;
       await chrome.storage.session.remove('coverPrompt').catch(() => {});
       renderPromptLine();
@@ -326,12 +410,35 @@ els.extractPrompt.addEventListener('click', async () => {
     delete p.songTitle; // title всегда = имя ковера
     coverPrompt = p;
     await chrome.storage.session.set({ coverPrompt: p }).catch(() => {});
-    logline('prompt extracted ✓ styles=' + (p.styles || '').length + ' lyrics=' + (p.lyrics || '').length);
+    const v = validatePrompt(p);
+    logline('prompt extracted ' + (v.ok ? '✓ VALID' : '✗ INVALID (' + v.issues.join('; ') + ')')
+      + ' styles=' + (p.styles || '').length + ' lyrics=' + (p.lyrics || '').length);
     renderPromptLine();
+    openPromptModal(); // наглядное подтверждение: что извлекли и валидно ли
   } catch (e) {
     logline('extract sendMessage ERROR: ' + e.message + ' (reload suno tab)');
   }
 });
+
+/* ── Prompt viewer ── */
+els.viewPrompt.addEventListener('click', openPromptModal);
+els.promptLine.addEventListener('click', () => { if (coverPrompt) openPromptModal(); });
+document.getElementById('pmClose').addEventListener('click', closePromptModal);
+document.getElementById('pmOk').addEventListener('click', closePromptModal);
+els.modal.addEventListener('click', (e) => { if (e.target === els.modal) closePromptModal(); });
+document.getElementById('pmCopy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(coverPrompt, null, 2));
+    logline('prompt JSON copied ✓');
+  } catch (e) {
+    logline('copy failed: ' + e.message);
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !els.modal.classList.contains('hidden')) closePromptModal();
+});
+
+els.closeBtn.addEventListener('click', () => window.close());
 
 els.start.addEventListener('click', async () => {
   logline('Start pressed (' + mode + ')');
@@ -343,7 +450,7 @@ els.start.addEventListener('click', async () => {
   if (mode === 'cover') {
     const p = coverPrompt || {};
     if (!p.styles && !p.lyrics) {
-      logline('ABORT: no prompt — press "✂ Extract" first (fields on page)');
+      logline('ABORT: no prompt — make sure prompt is placed in Suno! Press ✂ Get Prompt');
       return;
     }
     try {
@@ -405,21 +512,6 @@ els.srvstart.addEventListener('click', async () => {
 
 els.srv.classList.add('clickable');
 
-els.probe.addEventListener('click', async () => {
-  logline('Probe pressed');
-  tab = await findSunoTab();
-  if (!tab) {
-    logline('no suno tab');
-    return;
-  }
-  try {
-    const r = await chrome.tabs.sendMessage(tab.id, { type: 'probe' });
-    logline('probe result: ' + JSON.stringify(r));
-  } catch (e) {
-    logline('probe ERROR: ' + e.message);
-  }
-});
-
 (function () {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => run().catch((e) => showError('init failed: ' + (e && e.message ? e.message : String(e)))));
@@ -434,6 +526,7 @@ async function run() {
   if (!tab) els.phase.textContent = 'open suno.com first';
   await loadCoverPrompt();
   renderPromptLine();
+  await verifyPromptAgainstPage('popup open'); // поля могли очиститься при F5
   // Проверка живости фонового воркера
   try {
     chrome.runtime.sendMessage({ type: 'get-start-diag' }, (r) => {

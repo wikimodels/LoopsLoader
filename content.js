@@ -563,7 +563,14 @@
   function coverSourceReady(stem) {
     const b = coverSourceBlock();
     if (!b) return null;
-    if (!textOf(b).includes(stem)) return null;
+    // Объективный сигнал: alt обложки строго "Cover art for {имя}"
+    const art = b.querySelector('img[alt^="Cover art for"]');
+    if (art) {
+      const alt = (art.getAttribute('alt') || '').replace(/^Cover art for\s*/i, '').trim();
+      if (alt !== stem) return null;
+    } else if (!textOf(b).includes(stem)) {
+      return null;
+    }
     if (!b.querySelector(SEL_PLAY)) return null;
     return b.querySelector('canvas') ? 'FULL' : 'CARD';
   }
@@ -635,14 +642,19 @@
   }
 
   async function clearAudioCondition() {
-    const b = document.querySelector('button[aria-label="Clear audio condition"]');
-    if (!b || !isVisible(b)) {
-      log('no cover block to clear (clean start)');
-      return;
+    // До 3 попыток: кнопка обязана исчезнуть — иначе старый кавер останется
+    for (let i = 0; i < 3; i++) {
+      const b = document.querySelector('button[aria-label="Clear audio condition"]');
+      if (!b || !isVisible(b)) {
+        if (i === 0) log('no cover block to clear (clean start)');
+        return true;
+      }
+      await clickEl(b, 'Clear audio condition (try ' + (i + 1) + ')');
+      await sleep(1200);
     }
-    await clickEl(b, 'Clear audio condition');
-    await sleep(1000);
-    log('after clear: block=' + !!coverSourceBlock() + ' dialogs=' + JSON.stringify(dialogTexts()));
+    const gone = !document.querySelector('button[aria-label="Clear audio condition"]');
+    log('after clear: block gone=' + gone + ' dialogs=' + JSON.stringify(dialogTexts()));
+    return gone;
   }
 
   async function findRowByName(name, timeout) {
@@ -715,6 +727,36 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  /** Объективный счётчик символов лирики: sr-only "N of 5000 characters used." */
+  function lyricsCharCount() {
+    const el = document.getElementById('lyrics-editor-char-count');
+    const m = el ? (el.textContent || '').match(/(\d+)\s+of\s+\d+/) : null;
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  /** Верификация Lexical: точное совпадение текста ИЛИ счётчик символов.
+      Счётчик не учитывает \n → сравниваем с длиной без переводов строк. */
+  function lexicalMatches(el, value) {
+    const txt = ((el.innerText || '')).replace(/\r/g, '').trim();
+    if (txt === (value || '').trim()) return true;
+    const cnt = lyricsCharCount();
+    if (cnt != null && value) {
+      const expect = value.replace(/[\r\n]/g, '').length;
+      return Math.abs(cnt - expect) <= 1;
+    }
+    return false;
+  }
+
+  /** Ждём, пока поле ввода примет целевое значение (React может перезаписать). */
+  async function waitForFieldValue(el, value, timeoutMs) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+      if ((el.value || '') === value) return true;
+      await sleep(200);
+    }
+    return (el.value || '') === value;
+  }
+
   /**
    * Вставка текста в Lexical Editor (contenteditable div).
    * Lexical игнорирует прямой DOM — работаем через его нативные обработчики:
@@ -722,42 +764,46 @@
    * @returns {Promise<boolean>} true если контент совпал после вставки
    */
   async function setLexicalValue(el, value) {
-    const norm = (t) => (t || '').trim().replace(/\s+/g, '').slice(0, 60);
-    const target = norm(value);
     el.focus();
     await sleep(80);
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const ctrlA = async (delay) => {
       el.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', ctrlKey: true, bubbles: true, cancelable: true }));
       el.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', code: 'KeyA', ctrlKey: true, bubbles: true }));
-      await sleep(attempt === 0 ? 80 : 50);
+      await sleep(delay);
+    };
+    const pasteWith = async (html) => {
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', value || '');
+        if (html) dt.setData('text/html', html);
+        el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+        await sleep(350);
+      } catch (_) {}
+    };
 
+    // Попытка 1..3: paste первым — он СОХРАНЯЕТ переводы строк
+    // (execCommand insertText склеивает \n в одну строку).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await ctrlA(attempt === 0 ? 80 : 50);
       if (attempt === 1) {
         el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true, cancelable: true }));
         el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', code: 'Backspace', bubbles: true }));
         await sleep(150);
       }
 
-      let ok = false;
-      try { ok = document.execCommand('insertText', false, value || ''); } catch (_) {}
-      await sleep(250);
-      if (ok && norm(el.innerText) === target) return true;
-
-      if (attempt === 2) {
-        try {
-          const dt = new DataTransfer();
-          dt.setData('text/plain', value || '');
-          dt.setData('text/html', (value || '').split('\n').map((l) => '<p>' + (l || '<br>') + '</p>').join(''));
-          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', ctrlKey: true, bubbles: true, cancelable: true }));
-          await sleep(80);
-          el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
-          await sleep(300);
-          return norm(el.innerText) === target;
-        } catch (_) {
-          return false;
-        }
+      if (attempt === 0) {
+        await pasteWith((value || '').split('\n').map((l) => '<p>' + (l || '<br>') + '</p>').join(''));
+      } else {
+        let ok = false;
+        try { ok = document.execCommand('insertText', false, value || ''); } catch (_) {}
+        await sleep(250);
+        if (!ok) await pasteWith('');
       }
+
+      if (lexicalMatches(el, value)) return true;
     }
+    log('lexical verify FAILED: counter=' + lyricsCharCount() + ' expected~' + ((value || '').replace(/[\r\n]/g, '').length));
     return false;
   }
 
@@ -773,36 +819,60 @@
     };
   }
 
-  /** Вставляет сохранённый промпт в поля страницы (styles + lyrics + neg). */
+  /** Вставляет сохранённый промпт в поля страницы (styles + lyrics + neg).
+      Каждое поле верифицируется по объективным данным (значение/счётчик). */
   async function applyPromptToFields(prompt) {
     log('--- step: insert prompt (styles/lyrics' + (prompt.negativePrompt ? '/negative' : '') + ')');
+
+    // ── Styles: reactSet → ждём точное совпадение значения, до 3 попыток ──
     const s = findStylesField();
     if (s) {
-      reactSet(s, prompt.styles || '');
-      log('styles set: ' + (prompt.styles || '').length + ' chars');
-      await sleep(500);
+      let ok = false;
+      for (let i = 0; i < 3 && !ok && !stopped; i++) {
+        reactSet(s, prompt.styles || '');
+        ok = await waitForFieldValue(s, prompt.styles || '', 2000);
+        if (!ok) { log('styles retry ' + (i + 1) + ': value mismatch'); await sleep(400); }
+      }
+      log('styles set: ' + (prompt.styles || '').length + ' chars, verified=' + ok);
     } else {
       log('styles field NOT found');
     }
+
+    // ── Lyrics: Lexical paste-first + счётчик символов ──
     const l = findLyricsField();
     if (l) {
       if (l.contentEditable === 'true') {
-        const okL = await setLexicalValue(l, prompt.lyrics || '');
-        log('lyrics (Lexical): ' + (okL ? 'verified ok' : 'inserted, VERIFY MANUALLY'));
+        let okL = false;
+        for (let i = 0; i < 2 && !okL && !stopped; i++) {
+          if (i > 0) log('lyrics retry ' + (i + 1));
+          okL = await setLexicalValue(l, prompt.lyrics || '');
+        }
+        const cnt = lyricsCharCount();
+        log('lyrics (Lexical): verified=' + okL + ' counter=' + cnt + '/' + (prompt.lyrics || '').replace(/[\r\n]/g, '').length);
       } else {
-        reactSet(l, prompt.lyrics || '');
-        log('lyrics set (plain textarea)');
+        let ok = false;
+        for (let i = 0; i < 3 && !ok && !stopped; i++) {
+          reactSet(l, prompt.lyrics || '');
+          ok = await waitForFieldValue(l, prompt.lyrics || '', 1500);
+        }
+        log('lyrics set (plain textarea), verified=' + ok);
       }
-      await sleep(500);
     } else {
       log('lyrics field NOT found');
     }
+
+    // ── Negative: то же ожидание значения ──
     if (prompt.negativePrompt) {
       const n = findNegativeField();
       if (n) {
-        reactSet(n, prompt.negativePrompt);
-        log('negative set: ' + prompt.negativePrompt.length + ' chars');
-        await sleep(300);
+        let ok = false;
+        for (let i = 0; i < 3 && !ok && !stopped; i++) {
+          reactSet(n, prompt.negativePrompt);
+          ok = await waitForFieldValue(n, prompt.negativePrompt, 1500);
+        }
+        log('negative set: ' + prompt.negativePrompt.length + ' chars, verified=' + ok);
+      } else {
+        log('negative field NOT found');
       }
     }
   }
@@ -839,12 +909,18 @@
       return true;
     }
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    setter.call(input, name);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    log('title set to: ' + name);
-    await sleep(500);
-    return true;
+    for (let i = 0; i < 3; i++) {
+      setter.call(input, name);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      const ok = await waitForFieldValue(input, name, 1500);
+      if (ok) {
+        log('title set & verified: ' + name);
+        return true;
+      }
+    }
+    log('title VERIFY FAILED: value="' + input.value + '"');
+    return false;
   }
 
   async function coverTrack(row, name) {

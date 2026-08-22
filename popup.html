@@ -9,7 +9,10 @@
   <div id="errbanner" class="errbanner" style="display:none"></div>
   <div class="hdr">
     <span>Loops Loader</span>
-    <span id="srv" class="srv" title="Local server status">server…</span>
+    <span class="hdr-right">
+      <span id="srv" class="srv" title="Local server status">server…</span>
+      <button id="closeBtn" class="hdr-x" type="button" title="Close">✕</button>
+    </span>
   </div>
   <div class="modes" id="modes">
     <button class="mode active" data-mode="loops" type="button">Лупы</button>
@@ -24,10 +27,27 @@
   <div class="foot">
     <button id="start" class="btn primary" type="button">Start Process</button>
     <button id="srvstart" class="btn srvbtn" type="button" title="Запустить локальный сервер лупов (127.0.0.1:8977)">Start Server</button>
-    <button id="extractPrompt" class="btn extbtn hidden" type="button" title="Забрать промпт (styles/lyrics) с полей страницы">✂ Extract</button>
+    <button id="viewPrompt" class="btn extbtn hidden" type="button" title="Показать извлечённый промпт">👁</button>
+    <button id="extractPrompt" class="btn extbtn hidden" type="button" title="Забрать промпт (styles/lyrics) с полей страницы">✂ Get Prompt</button>
     <button id="stop" class="btn danger" type="button" disabled>Stop</button>
-    <button id="probe" class="btn ghost" type="button">Probe</button>
   </div>
+
+  <!-- Prompt viewer modal -->
+  <div id="promptModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-hdr">
+        <span class="modal-title">Extracted Prompt</span>
+        <span id="pmBadge" class="pm-badge"></span>
+        <button id="pmClose" class="modal-x" type="button" title="Close">✕</button>
+      </div>
+      <div class="modal-body" id="pmBody"></div>
+      <div class="modal-foot">
+        <button id="pmCopy" class="btn primary modal-btn" type="button">📋 Copy JSON</button>
+        <button id="pmOk" class="btn ghost modal-btn" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

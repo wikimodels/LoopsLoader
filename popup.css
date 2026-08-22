@@ -46,6 +46,30 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, .07);
 }
 
+.hdr-right {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.hdr-x {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .06);
+  color: #9aa0b0;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.hdr-x:hover {
+  background: rgba(255, 107, 107, .12);
+  border-color: rgba(255, 107, 107, .45);
+  color: #ff6b6b;
+}
+
 .srv {
   font-size: 11px;
   font-weight: 600;
@@ -149,17 +173,19 @@ body {
 
 .foot {
   display: flex;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 6px;
+  padding: 9px 10px;
   border-top: 1px solid rgba(255, 255, 255, .07);
 }
 
 .btn {
   flex: 1;
+  min-width: 0;
+  white-space: nowrap;
   border: none;
   border-radius: 10px;
-  padding: 9px 0;
-  font: 600 13px/1 system-ui, sans-serif;
+  padding: 9px 4px;
+  font: 600 12px/1 system-ui, sans-serif;
   cursor: pointer;
 }
 
@@ -167,11 +193,10 @@ body {
 
 .btn.primary { background: linear-gradient(90deg, #ffd43b, #ff922b); color: #10121c; }
 .btn.danger { background: rgba(255, 107, 107, .15); color: #ff6b6b; border: 1px solid rgba(255, 107, 107, .4); }
-.btn.ghost { flex: none; width: auto; padding: 9px 12px; background: rgba(255, 255, 255, .08); color: #9aa0b0; }
 
 .srvbtn {
   margin: 0;
-  padding: 9px 0;
+  padding: 9px 6px;
   background: rgba(105, 219, 124, .12);
   border: 1px solid rgba(105, 219, 124, .35);
   color: #69db7c;
@@ -181,7 +206,7 @@ body {
 
 .extbtn {
   margin: 0;
-  padding: 9px 0;
+  padding: 9px 6px;
   background: rgba(250, 204, 21, .1);
   border: 1px solid rgba(250, 204, 21, .35);
   color: #facc15;
@@ -206,3 +231,136 @@ body {
 
 .prompt-line.ok { color: #69db7c; }
 .prompt-line.bad { color: #ff6b6b; }
+.prompt-line.viewable { cursor: pointer; }
+.prompt-line.viewable:hover { background: rgba(255, 255, 255, .08); }
+
+/* ── Prompt viewer modal ─────────────────────────────────── */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 6, 10, .72);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  width: 352px;
+  max-height: 490px;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, #1c2030, #10121c);
+  border: 1px solid rgba(250, 204, 21, .35);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .65);
+  overflow: hidden;
+}
+
+.modal-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+
+.modal-title {
+  flex: 1;
+  font-weight: 700;
+  color: #ffd43b;
+}
+
+.pm-badge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.pm-badge.ok { color: #69db7c; background: rgba(105, 219, 124, .13); border: 1px solid rgba(105, 219, 124, .4); }
+.pm-badge.bad { color: #ff6b6b; background: rgba(255, 107, 107, .13); border: 1px solid rgba(255, 107, 107, .4); }
+
+.modal-x {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .06);
+  color: #9aa0b0;
+  cursor: pointer;
+}
+.modal-x:hover { color: #ff6b6b; border-color: rgba(255, 107, 107, .45); }
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+
+.pm-issues {
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(255, 107, 107, .12);
+  border: 1px solid rgba(255, 107, 107, .4);
+  color: #ff6b6b;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.pm-field {
+  margin-bottom: 10px;
+}
+
+.pm-field-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd43b;
+}
+
+.pm-field-head .pm-len {
+  font-weight: 400;
+  color: #6f7689;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.pm-pre {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .32);
+  border: 1px solid rgba(255, 255, 255, .05);
+  font: 10.5px/1.5 ui-monospace, Consolas, monospace;
+  color: #cfd3de;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: all;
+  max-height: 130px;
+  overflow-y: auto;
+}
+
+.pm-pre.empty { color: #6f7689; font-style: italic; }
+
+/* Единый документ промпта на всю высоту окна */
+.pm-pre.modal-doc {
+  max-height: 330px;
+  min-height: 200px;
+  font-size: 11px;
+}
+
+.modal-foot {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+}
+
+.modal-btn { font-size: 12px; padding: 8px 0; }
